@@ -9,3 +9,6 @@ node_modules/
 .DS_Store
 __pycache__/
 *.pyc
+
+# Generated demo state: the fixtures regenerate this on every run.
+examples/*/.acb/

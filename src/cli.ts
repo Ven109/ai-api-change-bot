@@ -3,8 +3,9 @@
 
 import path from "node:path";
 import { CONFIG_FILENAME, ConfigError, loadConfig, type Config } from "./config.ts";
-import { acbPaths } from "./state.ts";
-import { EXIT_ERROR, EXIT_OK, error, info, setVerbose } from "./log.ts";
+import { acbPaths, writeJson } from "./state.ts";
+import { EXIT_ERROR, EXIT_OK, error, info, setVerbose, stage } from "./log.ts";
+import { countCallSites, scanRepo } from "./scan/index.ts";
 
 const USAGE = `acb — self-maintaining API dependencies
 
@@ -175,6 +176,36 @@ function printConfig(config: Config, asJson: boolean): void {
   info(`privacy:     ${config.privacy.mode}`);
 }
 
+function runScan(config: Config, args: ParsedArgs): number {
+  const { manifest, filesParsed } = scanRepo(config);
+  writeJson(acbPaths(config.root).manifest, manifest);
+
+  if (args.json) {
+    info(JSON.stringify(manifest, null, 2));
+    return EXIT_OK;
+  }
+
+  stage(
+    "scan",
+    `${manifest.integrations.length} integration(s), ${countCallSites(manifest)} call site(s), ` +
+      `${filesParsed} file(s) parsed`,
+  );
+  for (const integration of manifest.integrations) {
+    info(`  ${integration.id}`);
+    for (const site of integration.callSites) {
+      const query = site.queryParams?.length ? `?${site.queryParams.join("&")}` : "";
+      info(
+        `    ${site.method ?? "GET"} ${site.pathTemplate ?? ""}${query}` +
+          `  (${site.file}:${site.line})`,
+      );
+    }
+  }
+  if (manifest.specs.length) {
+    info(`  API specs in repo: ${manifest.specs.join(", ")}`);
+  }
+  return EXIT_OK;
+}
+
 export async function main(argv: string[]): Promise<number> {
   let args: ParsedArgs;
   try {
@@ -209,8 +240,7 @@ export async function main(argv: string[]): Promise<number> {
         return EXIT_OK;
       }
       case "scan":
-        loadConfig(root);
-        throw new NotImplementedError("scan", "AIA-3/AIA-4");
+        return runScan(loadConfig(root), args);
       case "check":
         loadConfig(root);
         throw new NotImplementedError("check", "AIA-22/AIA-6");
