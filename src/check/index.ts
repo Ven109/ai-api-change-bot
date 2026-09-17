@@ -12,10 +12,13 @@ import { debug, warn } from "../log.ts";
 import { acbPaths, type AcbState } from "../state.ts";
 import { parseChangelog } from "./changelog.ts";
 import { diffSpecs } from "./openapi.ts";
+import { fetchSdkChanges, resolveSource, type ResolvedSource } from "./registry.ts";
 import { loadSource, snapshotName } from "./sources.ts";
 
 export type CheckOptions = {
   offline: boolean;
+  /** Injected in tests so the registry lookups need no network. */
+  fetchImpl?: typeof fetch;
   /** Record everything as seen without reporting it: first-run setup. */
   baseline: boolean;
   /** Ignore entries older than this ISO date. */
@@ -48,6 +51,18 @@ export async function checkUpstream(
 
   for (const integration of manifest.integrations) {
     const sources = config.sources[integration.id] ?? [];
+
+    // A package tells us where to look, so no configuration is needed.
+    if (sources.length === 0 && integration.kind === "sdk") {
+      const entries = await checkSdkIntegration(integration.id, integration.declaredVersion, {
+        state,
+        options,
+      });
+      if (entries === undefined) result.withoutSources.push(integration.id);
+      else result.entries.push(...entries);
+      continue;
+    }
+
     if (sources.length === 0) {
       result.withoutSources.push(integration.id);
       continue;
@@ -125,6 +140,44 @@ export async function checkUpstream(
 
   if (options.baseline) result.entries = [];
   return result;
+}
+
+/**
+ * Resolve and read an SDK integration's upstream sources. Returns undefined
+ * when nothing could be resolved, so the caller can report it as unconfigured.
+ */
+async function checkSdkIntegration(
+  integrationId: string,
+  declaredVersion: string | undefined,
+  context: { state: AcbState; options: CheckOptions },
+): Promise<ChangeEntry[] | undefined> {
+  const { state, options } = context;
+  const registryOptions = {
+    offline: options.offline,
+    fetchImpl: options.fetchImpl,
+    githubToken: process.env.GITHUB_TOKEN,
+  };
+
+  const cache = (state.resolvedSources ?? {}) as Record<string, ResolvedSource>;
+  let source = cache[integrationId];
+  const declared = declaredVersion;
+
+  // Re-resolve when the declared version moved: the comparison baseline moved.
+  if (!source || source.fromVersion !== cleanVersionOf(declared)) {
+    const resolved = await resolveSource(integrationId, declared, registryOptions);
+    if (!resolved) return undefined;
+    source = resolved;
+    state.resolvedSources = { ...cache, [integrationId]: resolved };
+  } else {
+    debug(`${integrationId}: using the cached source ${source.url}`);
+  }
+
+  return fetchSdkChanges(integrationId, source, registryOptions);
+}
+
+function cleanVersionOf(range: string | undefined): string | undefined {
+  const match = range?.match(/(\d+)\.(\d+)(?:\.(\d+))?/);
+  return match?.[0];
 }
 
 function readSnapshot(file: string): unknown | undefined {
