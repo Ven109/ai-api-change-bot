@@ -40,6 +40,12 @@ export type Manifest = {
   integrations: Integration[];
   /** OpenAPI/Swagger documents checked into the repo. */
   specs: string[];
+  /**
+   * Fingerprint of the repo-wide base-URL constants. When it changes, files
+   * that did not change can still mean something different, so the next scan
+   * reparses everything.
+   */
+  sharedConstantsHash?: string;
 };
 
 /** A single upstream change worth considering, from a spec diff or prose source. */

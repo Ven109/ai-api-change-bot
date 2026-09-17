@@ -252,11 +252,20 @@ function isImportLine(text: string): boolean {
   return /^\s*(import\b|from\b.*\bimport\b|(?:const|let|var)\s+[^=]+=\s*require\()/.test(text);
 }
 
+/** Files that declare dependencies; a change in one invalidates SDK results. */
+export const DEPENDENCY_MANIFESTS = ["package.json", "requirements.txt"];
+
 export type SdkScanInput = {
   root: string;
   sources: Map<string, { language: Language; text: string }>;
   includeDeps: string[];
   excludeDeps: string[];
+  /**
+   * Keep dependencies that are declared but have no usage in `sources`. An
+   * incremental scan only passes the files that changed, so "no usage here"
+   * does not mean "no usage anywhere" and the caller merges in cached sites.
+   */
+  declaredOnly?: boolean;
 };
 
 export function scanSdkIntegrations(input: SdkScanInput): Integration[] {
@@ -276,7 +285,7 @@ export function scanSdkIntegrations(input: SdkScanInput): Integration[] {
     }
 
     // Declared but never imported: nothing for an upstream change to affect.
-    if (callSites.length === 0) continue;
+    if (callSites.length === 0 && !input.declaredOnly) continue;
 
     integrations.push({
       id: dependency.id,

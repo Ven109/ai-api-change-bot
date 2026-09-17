@@ -3,9 +3,10 @@
 
 import path from "node:path";
 import { CONFIG_FILENAME, ConfigError, loadConfig, type Config } from "./config.ts";
-import { acbPaths, writeJson } from "./state.ts";
-import { EXIT_ERROR, EXIT_OK, error, info, setVerbose, stage } from "./log.ts";
+import { acbPaths, readJson, writeJson } from "./state.ts";
+import { EXIT_ERROR, EXIT_OK, debug, error, info, setVerbose, stage } from "./log.ts";
 import { countCallSites, scanRepo } from "./scan/index.ts";
+import type { Manifest } from "./types.ts";
 
 const USAGE = `acb — self-maintaining API dependencies
 
@@ -177,8 +178,13 @@ function printConfig(config: Config, asJson: boolean): void {
 }
 
 function runScan(config: Config, args: ParsedArgs): number {
-  const { manifest, filesParsed } = scanRepo(config);
-  writeJson(acbPaths(config.root).manifest, manifest);
+  const paths = acbPaths(config.root);
+  const previous = readJson<Manifest | undefined>(paths.manifest, undefined);
+  const { manifest, filesParsed, filesReused, fullReason } = scanRepo(config, {
+    previous,
+    full: args.flags.has("full"),
+  });
+  writeJson(paths.manifest, manifest);
 
   if (args.json) {
     info(JSON.stringify(manifest, null, 2));
@@ -188,8 +194,9 @@ function runScan(config: Config, args: ParsedArgs): number {
   stage(
     "scan",
     `${manifest.integrations.length} integration(s), ${countCallSites(manifest)} call site(s), ` +
-      `${filesParsed} file(s) parsed`,
+      `${filesParsed} file(s) parsed, ${filesReused} cached`,
   );
+  if (fullReason && previous) debug(`full reparse: ${fullReason}`);
   for (const integration of manifest.integrations) {
     const version = integration.declaredVersion ? ` (${integration.declaredVersion})` : "";
     info(`  ${integration.id}${version}`);
