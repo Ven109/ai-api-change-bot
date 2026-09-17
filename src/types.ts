@@ -71,11 +71,30 @@ export type ChangeIdentifier = {
   token?: string;
 };
 
+/** The concrete thing in the code that matched, so validation can check it went away. */
+export type MatchEvidence = {
+  /** The path template the call site used (the old one, pre-migration). */
+  pathTemplate?: string;
+  /** A query parameter the call site passed. */
+  param?: string;
+  /** An SDK member chain. */
+  member?: string;
+  /** A response field read in the code. */
+  field?: string;
+};
+
+export type CandidateMatch = {
+  file: string;
+  line: number;
+  reason: string;
+  evidence?: MatchEvidence;
+};
+
 export type Candidate = {
   entryId: string;
   integrationId: string;
   score: number;
-  matches: { file: string; line: number; reason: string }[];
+  matches: CandidateMatch[];
 };
 
 export type Risk = "low" | "medium" | "high";

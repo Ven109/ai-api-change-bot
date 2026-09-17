@@ -9,7 +9,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { canonicalizePath } from "../check/openapi.ts";
-import type { Candidate, ChangeEntry, Integration, Manifest } from "../types.ts";
+import type {
+  Candidate,
+  CandidateMatch,
+  ChangeEntry,
+  Integration,
+  Manifest,
+  MatchEvidence,
+} from "../types.ts";
 
 export type PrefilterInput = {
   manifest: Manifest;
@@ -87,23 +94,24 @@ function adjustForTags(score: number, tags: string[]): number {
   return score;
 }
 
-type Matched = { score: number; matches: { file: string; line: number; reason: string }[] };
+type Matched = { score: number; matches: CandidateMatch[] };
 
 function matchEntry(
   entry: ChangeEntry,
   integration: Integration,
   input: PrefilterInput,
 ): Matched {
-  const best = new Map<string, { file: string; line: number; reason: string; score: number }>();
+  const best = new Map<string, CandidateMatch & { score: number }>();
   const record = (
     site: { file: string; line: number },
     reason: string,
     score: number,
+    evidence: MatchEvidence,
   ): void => {
     const key = `${site.file}:${site.line}`;
     const existing = best.get(key);
     if (existing && existing.score >= score) return;
-    best.set(key, { file: site.file, line: site.line, reason, score });
+    best.set(key, { file: site.file, line: site.line, reason, score, evidence });
   };
 
   const paths = entry.identifiers.filter((i) => i.pathTemplate).map((i) => i);
@@ -142,6 +150,7 @@ function matchEntry(
           site,
           `calls ${site.method ?? "GET"} ${site.pathTemplate}, named in "${entry.title}"`,
           pathScore,
+          { pathTemplate: site.pathTemplate },
         );
       }
 
@@ -157,24 +166,27 @@ function matchEntry(
             site,
             `uses version ${version} of this API (${site.pathTemplate})`,
             SCORE.versionSegment,
+            { pathTemplate: site.pathTemplate },
           );
         }
       }
 
       for (const param of site.queryParams ?? []) {
         if (params.has(param)) {
-          record(site, `passes the \`${param}\` parameter`, SCORE.param);
+          record(site, `passes the \`${param}\` parameter`, SCORE.param, { param });
         }
       }
     }
 
     if (integration.kind === "sdk" && site.member) {
       if (tokens.has(site.member) || tokens.has(stripCall(site.member))) {
-        record(site, `uses \`${site.member}\`, named in the entry`, SCORE.member);
+        record(site, `uses \`${site.member}\`, named in the entry`, SCORE.member, {
+          member: site.member,
+        });
       } else if (
         [...tokens].some((token) => site.member === token || site.member?.endsWith(`.${token}`))
       ) {
-        record(site, `uses \`${site.member}\``, SCORE.member);
+        record(site, `uses \`${site.member}\``, SCORE.member, { member: site.member });
       }
     }
   }
@@ -185,7 +197,9 @@ function matchEntry(
   // noise rather than evidence.
   if (pathMatched && input.root && entry.kind === "openapi" && (fields.size || tokens.size)) {
     for (const hit of searchForSymbols(input.root, input.manifest, [...fields, ...tokens])) {
-      record(hit, `reads \`${hit.symbol}\`, which the entry mentions`, SCORE.fieldUsage);
+      record(hit, `reads \`${hit.symbol}\`, which the entry mentions`, SCORE.fieldUsage, {
+        field: hit.symbol,
+      });
     }
   }
 
@@ -194,7 +208,12 @@ function matchEntry(
   );
   return {
     score: matches.reduce((highest, match) => Math.max(highest, match.score), 0),
-    matches: matches.map(({ file, line, reason }) => ({ file, line, reason })),
+    matches: matches.map(({ file, line, reason, evidence }) => ({
+      file,
+      line,
+      reason,
+      evidence,
+    })),
   };
 }
 
