@@ -18,6 +18,7 @@ import {
   debug,
   error,
   info,
+  llmStage,
   setVerbose,
   stage,
   warn,
@@ -26,6 +27,8 @@ import { countCallSites, scanRepo } from "./scan/index.ts";
 import type { Manifest } from "./types.ts";
 import { checkUpstream } from "./check/index.ts";
 import { analyzeImpact } from "./impact/index.ts";
+import { createProvider } from "./model/index.ts";
+import { guard } from "./model/egress.ts";
 import { renderMarkdownReport, reportFileName } from "./impact/report.ts";
 import type { ChangeEntry } from "./types.ts";
 
@@ -325,11 +328,23 @@ async function runImpact(config: Config, args: ParsedArgs): Promise<number> {
   const manifest = requireManifest(config);
   const entries = await pendingChanges(config, manifest, args);
 
-  const result = await analyzeImpact(config, manifest, entries, {
-    noLlm: args.flags.has("no-llm"),
-  });
+  const noLlm = args.flags.has("no-llm");
+  const provider = noLlm
+    ? undefined
+    : guard(createProvider(config), {
+        config,
+        dryRun: args.flags.has("dry-run-llm") || args.flags.has("print-prompts"),
+      });
+  if (!noLlm && !provider) {
+    warn(
+      'no model configured, reporting the deterministic evidence only. Set "model" in ' +
+        `${CONFIG_FILENAME} for risk assessment and migration plans.`,
+    );
+  }
 
-  const analyzer = "deterministic prefilter only";
+  const result = await analyzeImpact(config, manifest, entries, { noLlm, provider });
+
+  const analyzer = result.analyzer;
   const generatedAt = new Date().toISOString();
   const markdown = renderMarkdownReport({
     items: result.items,
@@ -337,6 +352,7 @@ async function runImpact(config: Config, args: ParsedArgs): Promise<number> {
     entries,
     analyzer,
     generatedAt,
+    egress: provider?.summary(),
   });
 
   const paths = acbPaths(config.root);
@@ -360,15 +376,31 @@ async function runImpact(config: Config, args: ParsedArgs): Promise<number> {
     `${result.candidates.length} candidate(s) from ${entries.length} change(s), ` +
       `${result.unmatched.length} filtered out before any model call`,
   );
-  for (const item of result.items) {
-    info(`  [${item.risk}] ${item.integrationId}: ${item.summary}`);
+  if (result.dryRunFile) {
+    const count = result.dryRunFiles?.length ?? 1;
+    info(
+      `  dry run: ${count} prompt(s) written to ${path.dirname(result.dryRunFile)}, nothing sent`,
+    );
+    return EXIT_OK;
+  }
+  if (provider) {
+    llmStage(provider.label, "impact", `${result.items.length} candidate(s) assessed`);
+  }
+  for (const item of result.items.filter((i) => i.relevant)) {
+    const deadline = item.deadline ? `, deadline ${item.deadline}` : "";
+    info(`  [${item.risk}${deadline}] ${item.integrationId}: ${item.summary}`);
+    for (const step of item.migrationSteps.slice(0, 4)) info(`      → ${step}`);
     for (const location of item.affected.slice(0, 5)) {
       info(`      ${location.file}:${location.line} — ${location.reason}`);
     }
     const hidden = item.affected.length - 5;
     if (hidden > 0) info(`      … and ${hidden} more location(s)`);
   }
+  for (const item of result.items.filter((i) => !i.relevant)) {
+    info(`  dismissed: ${item.summary} — ${item.dismissedReason}`);
+  }
   info(`  report: ${path.join(paths.reports, base + ".md")}`);
+  if (provider) info(`  ${provider.summary()}`);
 
   return result.items.some((item) => item.relevant) ? EXIT_ACTION_REQUIRED : EXIT_OK;
 }

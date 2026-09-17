@@ -14,6 +14,8 @@ export type ReportInput = {
   /** e.g. "deterministic prefilter only" or "anthropic/claude-opus-5". */
   analyzer: string;
   generatedAt?: string;
+  /** One line on what left this machine, from the egress guard. */
+  egress?: string;
 };
 
 export function renderMarkdownReport(input: ReportInput): string {
@@ -109,6 +111,13 @@ export function renderMarkdownReport(input: ReportInput): string {
     for (const entry of input.unmatched) {
       lines.push(`- ${entry.title}${entry.tags.length ? ` [${entry.tags.join(", ")}]` : ""}`);
     }
+    lines.push("");
+  }
+
+  if (input.egress) {
+    lines.push("---");
+    lines.push("");
+    lines.push(input.egress);
     lines.push("");
   }
 

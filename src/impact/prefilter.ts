@@ -114,6 +114,20 @@ function matchEntry(
   const pathScore = entry.kind === "openapi" ? SCORE.specOperation : SCORE.prosePath;
   let pathMatched = false;
 
+  // An identifier with two or more path segments is a concrete endpoint.
+  const namesSpecificPath = paths.some(
+    (identifier) => pathSegments(identifier.pathTemplate ?? "").length >= 2,
+  );
+  const mentionedVersions = new Set<string>();
+  for (const identifier of entry.identifiers) {
+    for (const segment of pathSegments(identifier.pathTemplate ?? "")) {
+      if (isVersionToken(segment)) mentionedVersions.add(segment);
+    }
+    if (identifier.token && isVersionToken(identifier.token)) {
+      mentionedVersions.add(identifier.token);
+    }
+  }
+
   for (const site of integration.callSites) {
     if (integration.kind === "http" && site.pathTemplate) {
       const sitePath = canonicalizePath(site.pathTemplate);
@@ -131,22 +145,19 @@ function matchEntry(
         );
       }
 
-      // Same API, same version segment: a version-wide retirement hits this
-      // call site even when the entry never spells the full path out. Prose
-      // only — a spec diff already names the exact operation, so applying
-      // this to spec entries would flag every v1 endpoint in the repo.
-      if (!pathMatched && entry.kind === "changelog") {
-        for (const segment of versionSegments(sitePath)) {
-          const mentioned = paths.some((identifier) =>
-            (identifier.pathTemplate ?? "").includes(segment),
+      // "API version 2.5 is retired", with no endpoint spelled out: the
+      // version alone is the evidence. Restricted to prose entries that name
+      // no specific path — a spec diff names the exact operation, and a
+      // changelog that names one has already been matched above or genuinely
+      // concerns a different endpoint.
+      if (!pathMatched && entry.kind === "changelog" && !namesSpecificPath) {
+        for (const version of versionSegments(sitePath)) {
+          if (!mentionedVersions.has(version)) continue;
+          record(
+            site,
+            `uses version ${version} of this API (${site.pathTemplate})`,
+            SCORE.versionSegment,
           );
-          if (mentioned) {
-            record(
-              site,
-              `uses API version segment ${segment} of ${site.pathTemplate}`,
-              SCORE.versionSegment,
-            );
-          }
         }
       }
 
@@ -196,13 +207,17 @@ function pathsEqual(sitePath: string, entryPath: string): boolean {
   return sitePath.endsWith(entryPath) || entryPath.endsWith(sitePath);
 }
 
-/** `/data/2.5/onecall` -> ["/2.5/", "/data/"] style version hints. */
+function pathSegments(pathTemplate: string): string[] {
+  return pathTemplate.split("/").filter(Boolean);
+}
+
+function isVersionToken(token: string): boolean {
+  return /^v?\d+(\.\d+)?$/.test(token);
+}
+
+/** `/data/2.5/onecall` -> ["2.5"]. */
 function versionSegments(pathTemplate: string): string[] {
-  const segments: string[] = [];
-  for (const match of pathTemplate.matchAll(/\/(v?\d+(?:\.\d+)?)(?=\/|$)/g)) {
-    segments.push(`/${match[1]}/`);
-  }
-  return segments;
+  return pathSegments(pathTemplate).filter(isVersionToken);
 }
 
 function stripCall(member: string): string {

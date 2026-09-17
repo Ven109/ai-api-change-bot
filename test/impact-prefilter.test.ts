@@ -89,20 +89,32 @@ test("prose naming a path scores lower than a spec diff", () => {
   assert.equal(candidates[0].score, 0.8);
 });
 
-test("prose with only a version segment still matches, at low confidence", () => {
+test("prose retiring a whole API version matches on the version alone", () => {
   const { candidates } = run([
     entry({
       kind: "changelog",
       tags: ["deprecation"],
-      identifiers: [{ pathTemplate: "/v1/something-else" }],
+      title: "API v1 is retired",
+      identifiers: [{ token: "v1" }],
     }),
   ]);
   assert.equal(candidates.length, 1);
   assert.equal(candidates[0].score, 0.6);
-  assert.match(candidates[0].matches[0].reason, /version segment \/v1\//);
+  assert.match(candidates[0].matches[0].reason, /uses version v1/);
 });
 
-test("the version-segment rule does not apply to spec diffs", () => {
+test("prose naming a different endpoint of the same version does not match", () => {
+  const { candidates } = run([
+    entry({
+      kind: "changelog",
+      tags: ["removal"],
+      identifiers: [{ pathTemplate: "/v1/other" }],
+    }),
+  ]);
+  assert.deepEqual(candidates, []);
+});
+
+test("the version rule does not apply to spec diffs", () => {
   const { candidates } = run([
     entry({ tags: ["breaking"], identifiers: [{ method: "POST", pathTemplate: "/v1/returns" }] }),
   ]);
