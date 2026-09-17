@@ -1,0 +1,11 @@
+{
+  "//": "The spec snapshot acb compares against is the one in .acb/specs/. Point the source at openapi.v1.json to establish the baseline, then at openapi.v2.json to replay the upstream release. See README.md.",
+  "sources": {
+    "http:api.parcelio.test": [
+      { "type": "openapi", "path": "upstream/openapi.v2.json" }
+    ]
+  },
+  "validate": {
+    "commands": ["python3 -m unittest discover -s tests -t ."]
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "weather-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Demo fixture: a small service that calls the OpenWeather One Call API over plain fetch.",
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  }
+}

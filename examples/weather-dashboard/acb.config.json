@@ -1,0 +1,10 @@
+{
+  "sources": {
+    "http:api.openweathermap.org": [
+      { "type": "changelog", "path": "upstream/openweather-changelog.md", "format": "markdown" }
+    ]
+  },
+  "validate": {
+    "commands": ["node --test \"test/*.test.js\""]
+  }
+}

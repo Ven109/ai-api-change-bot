@@ -1,0 +1,203 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Parcelio Shipping API",
+    "version": "2026-09-01",
+    "description": "DEMO FIXTURE. Synthetic provider used to demonstrate acb; modeled on common shipping-API shapes, not a real service."
+  },
+  "servers": [{ "url": "https://api.parcelio.test" }],
+  "paths": {
+    "/v1/shipments": {
+      "post": {
+        "operationId": "createShipment",
+        "summary": "Create a shipment",
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+    "/v1/shipments/{shipment_id}": {
+      "get": {
+        "operationId": "getShipment",
+        "summary": "Fetch a shipment",
+        "parameters": [
+          {
+            "name": "shipment_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The shipment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "state": { "type": "string" },
+                    "weight_grams": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/shipments/{shipment_id}/track": {
+      "get": {
+        "operationId": "trackShipment",
+        "summary": "Tracking state for a shipment",
+        "deprecated": true,
+        "description": "Deprecated in favour of GET /v2/tracking/{tracking_number}, which is keyed by the carrier tracking number instead of the Parcelio shipment id. This operation stops serving traffic on 2027-01-15.",
+        "x-sunset": "2027-01-15",
+        "parameters": [
+          {
+            "name": "shipment_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "carrier_code",
+            "in": "query",
+            "required": false,
+            "description": "Carrier slug, for example dhl or ups. Renamed from carrier.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tracking state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string" },
+                    "estimated_delivery": { "type": "string", "format": "date" },
+                    "checkpoints": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "at": { "type": "string", "format": "date-time" },
+                          "location": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/tracking/{tracking_number}": {
+      "get": {
+        "operationId": "getTracking",
+        "summary": "Tracking state by carrier tracking number",
+        "parameters": [
+          {
+            "name": "tracking_number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "carrier_code",
+            "in": "query",
+            "required": true,
+            "description": "Carrier slug, for example dhl or ups.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tracking state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string" },
+                    "estimated_delivery": { "type": "string", "format": "date" },
+                    "checkpoints": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "at": { "type": "string", "format": "date-time" },
+                          "location": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/labels": {
+      "post": {
+        "operationId": "createLabel",
+        "summary": "Buy a shipping label",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["shipment_id", "weight_grams"],
+                "properties": {
+                  "shipment_id": { "type": "string" },
+                  "weight_grams": { "type": "integer" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The label",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "label_url": { "type": "string" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/returns": {
+      "post": {
+        "operationId": "createReturn",
+        "summary": "Register a return",
+        "parameters": [
+          {
+            "name": "reason",
+            "in": "query",
+            "required": true,
+            "description": "Now mandatory so returns can be routed automatically.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+    "/v2/rates": {
+      "get": {
+        "operationId": "getRates",
+        "summary": "Quote shipping rates",
+        "responses": { "200": { "description": "Rates" } }
+      }
+    }
+  }
+}
