@@ -31,8 +31,9 @@ export function languageOf(file: string): Language | undefined {
 }
 
 /**
- * Ignore matching, kept to the two shapes that actually show up in config:
- * a plain directory or file name, and a `*.ext` suffix glob.
+ * Ignore matching, kept to the shapes that actually show up in config: a plain
+ * directory or file name, a `*.ext` suffix glob, a `.env.*` prefix glob, and a
+ * path prefix.
  */
 export function isIgnored(relativePath: string, patterns: string[]): boolean {
   const segments = relativePath.split(path.sep);
@@ -40,6 +41,10 @@ export function isIgnored(relativePath: string, patterns: string[]): boolean {
     if (pattern.startsWith("*")) {
       const suffix = pattern.slice(1);
       return segments.some((segment) => segment.endsWith(suffix));
+    }
+    if (pattern.endsWith("*")) {
+      const prefix = pattern.slice(0, -1);
+      return segments.some((segment) => segment.startsWith(prefix));
     }
     if (pattern.includes("/")) {
       const normalized = pattern.replace(/^\.\//, "").replace(/\/$/, "");
