@@ -10,6 +10,7 @@ import type { Config } from "../config.ts";
 import type { ChangeEntry, Manifest } from "../types.ts";
 import { debug, warn } from "../log.ts";
 import { acbPaths, type AcbState } from "../state.ts";
+import { parseChangelog } from "./changelog.ts";
 import { diffSpecs } from "./openapi.ts";
 import { loadSource, snapshotName } from "./sources.ts";
 
@@ -55,6 +56,17 @@ export async function checkUpstream(
     for (const spec of sources) {
       const loaded = await loadSource(spec, { root: config.root, offline: options.offline });
       if (!loaded) continue;
+
+      if (spec.type === "changelog") {
+        const entries = parseChangelog(loaded.text, {
+          integrationId: integration.id,
+          source: loaded.origin,
+          format: spec.format,
+        });
+        debug(`${integration.id}: ${entries.length} entr(ies) in ${loaded.origin}`);
+        result.entries.push(...entries);
+        continue;
+      }
 
       if (spec.type === "openapi") {
         const snapshotPath = path.join(paths.specs, snapshotName(integration.id, loaded.origin));
