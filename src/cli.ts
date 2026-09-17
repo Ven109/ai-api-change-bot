@@ -31,6 +31,7 @@ import { analyzeImpact } from "./impact/index.ts";
 import { createProvider } from "./model/index.ts";
 import { guard } from "./model/egress.ts";
 import { checkContracts, contractSummary } from "./validate/contract.ts";
+import { renderSummary, runLoop } from "./run.ts";
 import { groupByIntegration, migrateIntegration } from "./migrate/index.ts";
 import { validationSummary } from "./validate/index.ts";
 import type { Candidate, ImpactItem } from "./types.ts";
@@ -127,8 +128,21 @@ Options:
 
 Usage: acb run [--no-llm] [--no-migrate] [--pr] [--offline] [--since <date>]
 
-Runs scan, check, impact and (for relevant items) migrate + validate, then
-writes patches or opens pull requests. Exits 2 when something needs a human.
+Runs scan, check, impact and (for relevant changes) migrate + validate, then
+writes patches or opens pull requests.
+
+Each stage says whether it was [deterministic] or [LLM …]. Exits 0 when there
+is nothing to do and 2 whenever something needs a human, which includes a
+migration that validated: acb never merges anything.
+
+Options:
+  --no-llm           Deterministic report only, no model calls
+  --no-migrate       Report, but do not attempt a migration
+  --offline          Skip every network source
+  --dry-run-llm      Write the prompts to .acb/egress/ and send nothing
+  --since <date>     Ignore upstream entries older than this
+  --keep-workspace   Leave .acb/work/<id> on disk for inspection
+  --pr               Open a pull request for each validated migration
 `,
   contract: `acb contract — check calls against the provider's spec [deterministic]
 
@@ -578,9 +592,20 @@ export async function main(argv: string[]): Promise<number> {
         return await runMigrate(loadConfig(root), args);
       case "contract":
         return runContract(loadConfig(root), args);
-      case "run":
-        loadConfig(root);
-        throw new NotImplementedError("run", "AIA-26");
+      case "run": {
+        const config = loadConfig(root);
+        const result = await runLoop(config, {
+          noLlm: args.flags.has("no-llm"),
+          noMigrate: args.flags.has("no-migrate"),
+          offline: args.flags.has("offline"),
+          dryRunLlm: args.flags.has("dry-run-llm") || args.flags.has("print-prompts"),
+          since: args.options.get("since"),
+          keepWorkspace: args.flags.has("keep-workspace"),
+          json: args.json,
+        });
+        info(args.json ? JSON.stringify(result, null, 2) : renderSummary(result));
+        return result.exitCode;
+      }
       default:
         throw new UsageError(`unknown command: ${args.command}`);
     }

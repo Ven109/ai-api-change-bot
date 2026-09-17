@@ -12,3 +12,6 @@ __pycache__/
 
 # Generated demo state: the fixtures regenerate this on every run.
 examples/*/.acb/
+
+# npm run demo works in copies under here.
+.demo/

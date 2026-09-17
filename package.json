@@ -12,7 +12,9 @@
   },
   "scripts": {
     "acb": "node bin/acb",
-    "test": "node --test \"test/*.test.ts\""
+    "test": "node --test \"test/*.test.ts\"",
+    "demo": "node scripts/demo.ts",
+    "demo:clean": "rm -rf .demo"
   },
   "license": "MIT",
   "devDependencies": {
