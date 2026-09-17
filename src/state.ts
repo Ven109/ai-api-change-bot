@@ -2,6 +2,7 @@
 //
 //   .acb/manifest.json   what this repo integrates with (commit it)
 //   .acb/state.json      which upstream changes we have already seen (commit it)
+//   .acb/changes.json    the change entries the last `check` reported
 //   .acb/specs/          snapshots of upstream OpenAPI specs (commit them)
 //   .acb/reports/        impact reports and agent transcripts
 //   .acb/patches/        generated patches
@@ -16,6 +17,7 @@ export type AcbPaths = {
   dir: string;
   manifest: string;
   state: string;
+  changes: string;
   specs: string;
   reports: string;
   patches: string;
@@ -29,6 +31,7 @@ export function acbPaths(root: string): AcbPaths {
     dir,
     manifest: path.join(dir, "manifest.json"),
     state: path.join(dir, "state.json"),
+    changes: path.join(dir, "changes.json"),
     specs: path.join(dir, "specs"),
     reports: path.join(dir, "reports"),
     patches: path.join(dir, "patches"),
@@ -68,4 +71,10 @@ export function readState(root: string): AcbState {
 
 export function writeState(root: string, state: AcbState): void {
   writeJson(acbPaths(root).state, state);
+}
+
+/** Write a text file, creating parent directories as needed. */
+export function writeFile(file: string, contents: string): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, contents.endsWith("\n") ? contents : contents + "\n");
 }

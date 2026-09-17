@@ -3,7 +3,14 @@
 
 import path from "node:path";
 import { CONFIG_FILENAME, ConfigError, loadConfig, type Config } from "./config.ts";
-import { acbPaths, readJson, readState, writeJson, writeState } from "./state.ts";
+import {
+  acbPaths,
+  readJson,
+  readState,
+  writeFile,
+  writeJson,
+  writeState,
+} from "./state.ts";
 import {
   EXIT_ACTION_REQUIRED,
   EXIT_ERROR,
@@ -18,6 +25,9 @@ import {
 import { countCallSites, scanRepo } from "./scan/index.ts";
 import type { Manifest } from "./types.ts";
 import { checkUpstream } from "./check/index.ts";
+import { analyzeImpact } from "./impact/index.ts";
+import { renderMarkdownReport, reportFileName } from "./impact/report.ts";
+import type { ChangeEntry } from "./types.ts";
 
 const USAGE = `acb — self-maintaining API dependencies
 
@@ -252,6 +262,12 @@ async function runCheck(config: Config, args: ParsedArgs): Promise<number> {
     since: args.options.get("since"),
   });
   writeState(config.root, state);
+  // Keep the entries around so `acb impact` can work on them without
+  // re-reading (and re-consuming) the upstream sources.
+  writeJson(acbPaths(config.root).changes, {
+    generatedAt: new Date().toISOString(),
+    entries: result.entries,
+  });
 
   if (args.json) {
     info(JSON.stringify(result, null, 2));
@@ -275,6 +291,86 @@ async function runCheck(config: Config, args: ParsedArgs): Promise<number> {
   }
 
   return result.entries.length > 0 ? EXIT_ACTION_REQUIRED : EXIT_OK;
+}
+
+/**
+ * The change entries to analyze: whatever the last `check` reported, or a
+ * fresh check when there is nothing pending.
+ */
+async function pendingChanges(
+  config: Config,
+  manifest: Manifest,
+  args: ParsedArgs,
+): Promise<ChangeEntry[]> {
+  const paths = acbPaths(config.root);
+  const stored = readJson<{ entries: ChangeEntry[] } | undefined>(paths.changes, undefined);
+  if (stored?.entries?.length) {
+    debug(`${stored.entries.length} pending change(s) from the last check`);
+    return stored.entries;
+  }
+
+  const state = readState(config.root);
+  const result = await checkUpstream(config, manifest, state, {
+    offline: args.flags.has("offline"),
+    baseline: false,
+    since: args.options.get("since"),
+  });
+  writeState(config.root, state);
+  writeJson(paths.changes, { generatedAt: new Date().toISOString(), entries: result.entries });
+  stage("check", `${result.entries.length} new upstream change(s)`);
+  return result.entries;
+}
+
+async function runImpact(config: Config, args: ParsedArgs): Promise<number> {
+  const manifest = requireManifest(config);
+  const entries = await pendingChanges(config, manifest, args);
+
+  const result = await analyzeImpact(config, manifest, entries, {
+    noLlm: args.flags.has("no-llm"),
+  });
+
+  const analyzer = "deterministic prefilter only";
+  const generatedAt = new Date().toISOString();
+  const markdown = renderMarkdownReport({
+    items: result.items,
+    unmatched: result.unmatched,
+    entries,
+    analyzer,
+    generatedAt,
+  });
+
+  const paths = acbPaths(config.root);
+  const base = reportFileName(generatedAt);
+  writeFile(path.join(paths.reports, base + ".md"), markdown);
+  writeJson(path.join(paths.reports, base + ".json"), {
+    generatedAt,
+    analyzer,
+    items: result.items,
+    candidates: result.candidates,
+    unmatched: result.unmatched.map((entry) => ({ id: entry.id, title: entry.title })),
+  });
+
+  if (args.json) {
+    info(JSON.stringify({ items: result.items, candidates: result.candidates }, null, 2));
+    return result.items.some((item) => item.relevant) ? EXIT_ACTION_REQUIRED : EXIT_OK;
+  }
+
+  stage(
+    "impact",
+    `${result.candidates.length} candidate(s) from ${entries.length} change(s), ` +
+      `${result.unmatched.length} filtered out before any model call`,
+  );
+  for (const item of result.items) {
+    info(`  [${item.risk}] ${item.integrationId}: ${item.summary}`);
+    for (const location of item.affected.slice(0, 5)) {
+      info(`      ${location.file}:${location.line} — ${location.reason}`);
+    }
+    const hidden = item.affected.length - 5;
+    if (hidden > 0) info(`      … and ${hidden} more location(s)`);
+  }
+  info(`  report: ${path.join(paths.reports, base + ".md")}`);
+
+  return result.items.some((item) => item.relevant) ? EXIT_ACTION_REQUIRED : EXIT_OK;
 }
 
 export async function main(argv: string[]): Promise<number> {
@@ -315,8 +411,7 @@ export async function main(argv: string[]): Promise<number> {
       case "check":
         return await runCheck(loadConfig(root), args);
       case "impact":
-        loadConfig(root);
-        throw new NotImplementedError("impact", "AIA-7/AIA-9");
+        return await runImpact(loadConfig(root), args);
       case "migrate":
         loadConfig(root);
         throw new NotImplementedError("migrate", "AIA-10/AIA-11");
