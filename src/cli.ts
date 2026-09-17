@@ -595,6 +595,7 @@ export async function main(argv: string[]): Promise<number> {
       case "run": {
         const config = loadConfig(root);
         const result = await runLoop(config, {
+          pr: args.flags.has("pr"),
           noLlm: args.flags.has("no-llm"),
           noMigrate: args.flags.has("no-migrate"),
           offline: args.flags.has("offline"),

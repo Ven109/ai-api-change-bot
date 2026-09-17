@@ -22,12 +22,15 @@ import {
 import { guard } from "./model/egress.ts";
 import { createProvider } from "./model/index.ts";
 import { groupByIntegration, migrateIntegration, type MigrationOutcome } from "./migrate/index.ts";
+import { openPullRequest } from "./deliver/pr.ts";
 import { countCallSites, scanRepo } from "./scan/index.ts";
 import { acbPaths, readJson, readState, writeFile, writeJson, writeState } from "./state.ts";
 import type { ImpactItem, Manifest, MigrationStatus } from "./types.ts";
 import { validationSummary } from "./validate/index.ts";
 
 export type RunOptions = {
+  /** Open a pull request for each migration. Never merges. */
+  pr?: boolean;
   noLlm: boolean;
   noMigrate: boolean;
   offline: boolean;
@@ -45,6 +48,7 @@ export type RunItemResult = {
   status: MigrationStatus | "dismissed";
   patchFile?: string;
   validation?: string;
+  prUrl?: string;
 };
 
 export type RunResult = {
@@ -207,11 +211,28 @@ export async function runLoop(config: Config, options: RunOptions): Promise<RunR
     });
     outcomes.push(outcome);
 
+    let prUrl: string | undefined;
+    if (options.pr) {
+      const pr = await openPullRequest({
+        config,
+        outcome,
+        entries: check.entries,
+        reportFile: base.reportFile,
+      });
+      prUrl = pr.url;
+      if (pr.url) {
+        info(`      pull request${pr.draft ? " (draft)" : ""}: ${pr.url}`);
+      } else if (pr.skipped) {
+        warn(`no pull request opened: ${pr.skipped}`);
+      }
+    }
+
     for (const item of items) {
       base.results.push({
         ...describeItem(item, outcome.status),
         patchFile: outcome.patchFile,
         validation: outcome.validation ? validationSummary(outcome.validation) : undefined,
+        prUrl,
       });
     }
   }
@@ -268,6 +289,8 @@ export function renderSummary(result: RunResult): string {
     lines.push("");
     for (const patch of [...new Set(patches)]) lines.push(`patch: ${patch}`);
   }
+  const prs = result.results.map((row) => row.prUrl).filter(Boolean);
+  for (const pr of [...new Set(prs)]) lines.push(`pull request: ${pr}`);
   if (result.reportFile) lines.push(`report: ${result.reportFile}`);
   if (result.egress) lines.push(result.egress);
   lines.push("");
