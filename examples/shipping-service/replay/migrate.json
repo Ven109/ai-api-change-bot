@@ -1,0 +1,107 @@
+{
+  "//": "A SCRIPTED AGENT, not a model recording. It exists so the migration loop can be exercised offline and in CI: the tool calls below are the edits a competent agent makes for this fixture. The impact recording next to it (impact.json) is a genuine model response; this one is a test double, and the demo output labels it as replay.",
+  "responses": [
+    {
+      "note": "Read the tracking call before changing it.",
+      "toolCalls": [
+        { "name": "read_file", "input": { "path": "shipping/client.py", "startLine": 45, "endLine": 70 } }
+      ]
+    },
+    {
+      "note": "Move to the v2 tracking operation and rename the query parameter.",
+      "toolCalls": [
+        {
+          "name": "replace_in_file",
+          "input": {
+            "path": "shipping/client.py",
+            "old": "        f\"{BASE_URL}/v1/shipments/{shipment_id}/track\",\n        params={\"carrier\": carrier},",
+            "new": "        f\"{BASE_URL}/v2/tracking/{shipment_id}\",\n        params={\"carrier_code\": carrier},"
+          }
+        }
+      ]
+    },
+    {
+      "note": "The eta field was replaced by estimated_delivery upstream; keep the internal key stable so callers do not churn.",
+      "toolCalls": [
+        {
+          "name": "replace_in_file",
+          "input": {
+            "path": "shipping/client.py",
+            "old": "        \"eta\": payload[\"eta\"],",
+            "new": "        \"eta\": payload[\"estimated_delivery\"],"
+          }
+        }
+      ]
+    },
+    {
+      "note": "Find every place that still encodes the old contract, tests included.",
+      "toolCalls": [
+        { "name": "search", "input": { "pattern": "v1/shipments/.*track|\"carrier\"|\"eta\"" } }
+      ]
+    },
+    {
+      "note": "The test stub asserts the old URL and parameter.",
+      "toolCalls": [
+        {
+          "name": "replace_in_file",
+          "input": {
+            "path": "tests/test_client.py",
+            "old": "        self.assertEqual(url, \"https://api.parcelio.test/v1/shipments/shp_1/track\")\n        self.assertEqual(params, {\"carrier\": \"dhl\"})",
+            "new": "        self.assertEqual(url, \"https://api.parcelio.test/v2/tracking/shp_1\")\n        self.assertEqual(params, {\"carrier_code\": \"dhl\"})"
+          }
+        }
+      ]
+    },
+    {
+      "note": "And the stubbed payload still uses the removed field name.",
+      "toolCalls": [
+        {
+          "name": "replace_in_file",
+          "input": {
+            "path": "tests/test_client.py",
+            "old": "                \"status\": \"in_transit\",\n                \"eta\": \"2026-09-21\",",
+            "new": "                \"status\": \"in_transit\",\n                \"estimated_delivery\": \"2026-09-21\","
+          }
+        }
+      ]
+    },
+    {
+      "note": "The notification tests stub the tracking payload too.",
+      "toolCalls": [
+        {
+          "name": "replace_in_file",
+          "input": {
+            "path": "tests/test_client.py",
+            "old": "        http = StubHttp({\"status\": \"in_transit\", \"eta\": \"2026-09-21\"})",
+            "new": "        http = StubHttp({\"status\": \"in_transit\", \"estimated_delivery\": \"2026-09-21\"})"
+          }
+        }
+      ]
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "replace_in_file",
+          "input": {
+            "path": "tests/test_client.py",
+            "old": "        http = StubHttp({\"status\": \"delivered\", \"eta\": \"2026-09-20\"})",
+            "new": "        http = StubHttp({\"status\": \"delivered\", \"estimated_delivery\": \"2026-09-20\"})"
+          }
+        }
+      ]
+    },
+    {
+      "toolCalls": [{ "name": "run_validation", "input": {} }]
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "finish",
+          "input": {
+            "summary": "Moved track_shipment to GET /v2/tracking/{tracking_number}, renamed the carrier query parameter to carrier_code, and read estimated_delivery instead of the removed eta field. The function keeps returning an \"eta\" key so shipping/notifications.py and other callers are unaffected. Updated the stubbed payloads and URL assertions in tests/test_client.py, which encoded the old contract. Reviewer note: the v2 operation is keyed by the carrier tracking number, and this code passes the Parcelio shipment id — confirm that is what your account expects before shipping."
+          }
+        }
+      ]
+    }
+  ]
+}

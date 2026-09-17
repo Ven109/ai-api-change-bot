@@ -31,12 +31,16 @@ export type ValidateInput = {
   config: Config;
   /** The migrated copy to check. */
   workspace: string;
-  item: ImpactItem;
   /**
-   * The prefilter candidate this item came from. Its evidence is what the
-   * residual-usage check looks for, so pass it when it is available.
+   * The changes being migrated. Several entries about one operation are one
+   * migration, so validation takes the whole set.
    */
-  candidate?: Candidate;
+  items: ImpactItem[];
+  /**
+   * The prefilter candidates those items came from. Their evidence is what the
+   * residual-usage check looks for, so pass them when available.
+   */
+  candidates?: Candidate[];
 };
 
 export async function validateMigration(input: ValidateInput): Promise<ValidationResult> {
@@ -108,8 +112,9 @@ async function runRepoCommands(input: ValidateInput): Promise<ValidationCheck[]>
  * entry" would be true even after a perfect migration.
  */
 function residualUsageCheck(input: ValidateInput): ValidationCheck {
-  const { candidate, config, workspace, item } = input;
-  const evidence = (candidate?.matches ?? [])
+  const { config, workspace } = input;
+  const evidence = (input.candidates ?? [])
+    .flatMap((candidate) => candidate.matches)
     .map((match) => match.evidence)
     .filter((value): value is NonNullable<typeof value> => Boolean(value));
 
@@ -123,7 +128,10 @@ function residualUsageCheck(input: ValidateInput): ValidationCheck {
 
   const workspaceConfig: Config = { ...config, root: workspace };
   const { manifest } = scanRepo(workspaceConfig);
-  const integration = manifest.integrations.find((entry) => entry.id === item.integrationId);
+  const integrationIds = new Set(input.items.map((item) => item.integrationId));
+  const callSites = manifest.integrations
+    .filter((integration) => integrationIds.has(integration.id))
+    .flatMap((integration) => integration.callSites);
 
   const oldPaths = new Set(
     evidence.map((item) => item.pathTemplate).filter(Boolean) as string[],
@@ -132,7 +140,7 @@ function residualUsageCheck(input: ValidateInput): ValidationCheck {
   const oldMembers = new Set(evidence.map((item) => item.member).filter(Boolean) as string[]);
 
   const remaining: string[] = [];
-  for (const site of integration?.callSites ?? []) {
+  for (const site of callSites) {
     if (site.pathTemplate && oldPaths.has(site.pathTemplate)) {
       remaining.push(
         `- ${site.file}:${site.line} still calls \`${site.method ?? "GET"} ${site.pathTemplate}\``,
@@ -183,12 +191,13 @@ function describeEvidence(
 function contractCheck(input: ValidateInput): ValidationCheck {
   const workspaceConfig: Config = { ...input.config, root: input.workspace };
   const { manifest } = scanRepo(workspaceConfig);
+  const integrationId = input.items[0]?.integrationId;
   const result = checkContracts({
     config: workspaceConfig,
     manifest,
     // Snapshots live with the real repository, not in the throwaway copy.
     specsDir: acbPaths(input.config.root).specs,
-    integrationId: input.item.integrationId,
+    integrationId,
   });
 
   const errors = result.problems.filter((problem) => problem.severity === "error");
@@ -198,7 +207,7 @@ function contractCheck(input: ValidateInput): ValidationCheck {
     return {
       name: "HTTP contract",
       passed: true,
-      details: `${input.item.integrationId}: no spec available, contract check skipped`,
+      details: `${integrationId}: no spec available, contract check skipped`,
     };
   }
 

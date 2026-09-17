@@ -65,8 +65,8 @@ test("a complete migration passes every check", async () => {
   const result = await validateMigration({
     config: loadConfig(root),
     workspace: root,
-    item,
-    candidate,
+    items: [item],
+    candidates: [candidate],
   });
 
   assert.equal(result.passed, true, JSON.stringify(result.checks, null, 2));
@@ -86,8 +86,8 @@ test("a half-finished migration fails the residual-usage check with file:line", 
   const result = await validateMigration({
     config: loadConfig(root),
     workspace: root,
-    item,
-    candidate,
+    items: [item],
+    candidates: [candidate],
   });
 
   assert.equal(result.passed, false);
@@ -112,8 +112,8 @@ test("a migration that breaks the tests fails the repo check with its output", a
   const result = await validateMigration({
     config: loadConfig(root),
     workspace: root,
-    item,
-    candidate,
+    items: [item],
+    candidates: [candidate],
   });
 
   assert.equal(result.passed, false);
@@ -142,8 +142,8 @@ test("no configured commands is reported, and the other checks still run", async
   const result = await validateMigration({
     config: loadConfig(root),
     workspace: root,
-    item,
-    candidate,
+    items: [item],
+    candidates: [candidate],
   });
 
   const repoCheck = result.checks.find((check) => check.name === "repo checks")!;
@@ -164,8 +164,8 @@ test("a failing command is captured rather than thrown", async () => {
   const result = await validateMigration({
     config: loadConfig(root),
     workspace: root,
-    item,
-    candidate,
+    items: [item],
+    candidates: [candidate],
   });
 
   assert.equal(result.checks[0].passed, false);
@@ -199,7 +199,12 @@ test("the shipping fixture's contract check is part of validation", async () => 
   const candidate = analysis.candidates.find((entry) => entry.entryId === item.entryId)!;
 
   // Unmigrated: the contract check fails on the deprecated operation.
-  const before = await validateMigration({ config, workspace: root, item, candidate });
+  const before = await validateMigration({
+    config,
+    workspace: root,
+    items: [item],
+    candidates: [candidate],
+  });
   const contract = before.checks.find((check) => check.name === "HTTP contract")!;
   assert.equal(contract.passed, false);
   assert.match(contract.details, /deprecated upstream/);

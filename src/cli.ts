@@ -1,6 +1,7 @@
 // Command line entry point: argument parsing and command dispatch only.
 // The pipeline stages live in their own modules and are added issue by issue.
 
+import fs from "node:fs";
 import path from "node:path";
 import { CONFIG_FILENAME, ConfigError, loadConfig, type Config } from "./config.ts";
 import {
@@ -30,6 +31,9 @@ import { analyzeImpact } from "./impact/index.ts";
 import { createProvider } from "./model/index.ts";
 import { guard } from "./model/egress.ts";
 import { checkContracts, contractSummary } from "./validate/contract.ts";
+import { groupByIntegration, migrateIntegration } from "./migrate/index.ts";
+import { validationSummary } from "./validate/index.ts";
+import type { Candidate, ImpactItem } from "./types.ts";
 import { renderMarkdownReport, reportFileName } from "./impact/report.ts";
 import type { ChangeEntry } from "./types.ts";
 
@@ -440,6 +444,89 @@ function runContract(config: Config, args: ParsedArgs): number {
   return result.problems.some((p) => p.severity === "error") ? EXIT_ACTION_REQUIRED : EXIT_OK;
 }
 
+type StoredImpact = {
+  items: ImpactItem[];
+  candidates: Candidate[];
+  entries?: ChangeEntry[];
+};
+
+/** The impact report to migrate: the newest one in .acb/reports. */
+function latestImpact(config: Config): StoredImpact | undefined {
+  const reports = acbPaths(config.root).reports;
+  if (!fs.existsSync(reports)) return undefined;
+  const files = fs
+    .readdirSync(reports)
+    .filter((file) => file.endsWith("-impact.json"))
+    .sort();
+  const newest = files.at(-1);
+  if (!newest) return undefined;
+  debug(`using impact report ${newest}`);
+  return readJson<StoredImpact | undefined>(path.join(reports, newest), undefined);
+}
+
+async function runMigrate(config: Config, args: ParsedArgs): Promise<number> {
+  const stored = latestImpact(config);
+  if (!stored?.items?.length) {
+    error('no impact report found. Run "acb impact" first, or use "acb run".');
+    return EXIT_ERROR;
+  }
+
+  const provider = guard(createProvider(config), { config });
+  if (!provider) {
+    error(
+      'migrating needs a model. Configure "model" in ' +
+        `${CONFIG_FILENAME} (provider: anthropic | openai | replay).`,
+    );
+    return EXIT_ERROR;
+  }
+
+  const wanted = args.options.get("item");
+  const relevant = stored.items.filter(
+    (item) => item.relevant && (wanted === undefined || item.id === wanted),
+  );
+  const groups = groupByIntegration(relevant);
+  if (groups.size === 0) {
+    info("nothing to migrate");
+    return EXIT_OK;
+  }
+
+  const pending = readJson<{ entries: ChangeEntry[] } | undefined>(
+    acbPaths(config.root).changes,
+    undefined,
+  );
+
+  let failures = 0;
+  for (const [integrationId, items] of groups) {
+    const outcome = await migrateIntegration({
+      config,
+      provider,
+      items,
+      candidates: stored.candidates,
+      entries: pending?.entries,
+      keepWorkspace: args.flags.has("keep-workspace"),
+    });
+
+    info(`  ${outcome.status}: ${integrationId} (${items.length} change(s))`);
+    info(`      attempts: ${outcome.attempts}, files changed: ${outcome.changedFiles.length}`);
+    if (outcome.validation) info(`      ${validationSummary(outcome.validation)}`);
+    for (const check of outcome.validation?.checks ?? []) {
+      if (!check.passed) info(`      failed: ${check.name} — ${firstLine(check.details)}`);
+    }
+    if (outcome.error) info(`      stopped early: ${outcome.error}`);
+    if (outcome.summary) info(`      agent: ${firstLine(outcome.summary)}`);
+    if (outcome.patchFile) info(`      patch: ${outcome.patchFile}`);
+    info(`      transcript: ${outcome.transcriptFile}`);
+    if (outcome.status !== "validated") failures++;
+  }
+
+  if (provider) info(`  ${provider.summary()}`);
+  return failures > 0 ? EXIT_ACTION_REQUIRED : EXIT_OK;
+}
+
+function firstLine(text: string): string {
+  return text.trim().split("\n")[0].slice(0, 160);
+}
+
 export async function main(argv: string[]): Promise<number> {
   let args: ParsedArgs;
   try {
@@ -480,8 +567,7 @@ export async function main(argv: string[]): Promise<number> {
       case "impact":
         return await runImpact(loadConfig(root), args);
       case "migrate":
-        loadConfig(root);
-        throw new NotImplementedError("migrate", "AIA-10/AIA-11");
+        return await runMigrate(loadConfig(root), args);
       case "contract":
         return runContract(loadConfig(root), args);
       case "run":

@@ -1,0 +1,53 @@
+{
+  "//": "A SCRIPTED AGENT, not a model recording. It exists so the migration loop can be exercised offline and in CI: the tool calls below are the edits a competent agent makes for this fixture. The impact recording next to it (impact.json) is a genuine model response; this one is a test double, and the demo output labels it as replay.",
+  "responses": [
+    {
+      "note": "Look at the first call site before editing it.",
+      "toolCalls": [{ "name": "read_file", "input": { "path": "src/weather.js" } }]
+    },
+    {
+      "note": "Move the forecast call to One Call 3.0, leaving the query string alone.",
+      "toolCalls": [
+        {
+          "name": "replace_in_file",
+          "input": {
+            "path": "src/weather.js",
+            "old": "`${OPENWEATHER_BASE_URL}/data/2.5/onecall` +",
+            "new": "`${OPENWEATHER_BASE_URL}/data/3.0/onecall` +"
+          }
+        }
+      ]
+    },
+    {
+      "note": "Find any other place that still uses the retired path.",
+      "toolCalls": [{ "name": "search", "input": { "pattern": "data/2\\\\.5/onecall" } }]
+    },
+    {
+      "note": "The alerts module has the second call site.",
+      "toolCalls": [
+        {
+          "name": "replace_in_file",
+          "input": {
+            "path": "src/alerts.js",
+            "old": "`${OPENWEATHER_BASE_URL}/data/2.5/onecall` +",
+            "new": "`${OPENWEATHER_BASE_URL}/data/3.0/onecall` +"
+          }
+        }
+      ]
+    },
+    {
+      "note": "Confirm with the deterministic checks.",
+      "toolCalls": [{ "name": "run_validation", "input": {} }]
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "finish",
+          "input": {
+            "summary": "Moved both One Call call sites from /data/2.5/onecall to /data/3.0/onecall (src/weather.js and src/alerts.js). Query parameters and response mapping are unchanged, as the provider's note says 3.0 keeps both. Note for the reviewer: 3.0 is billed through the separate \"One Call by Call\" subscription, so the production API key needs that plan or the calls will return 401."
+          }
+        }
+      ]
+    }
+  ]
+}
