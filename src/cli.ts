@@ -3,10 +3,21 @@
 
 import path from "node:path";
 import { CONFIG_FILENAME, ConfigError, loadConfig, type Config } from "./config.ts";
-import { acbPaths, readJson, writeJson } from "./state.ts";
-import { EXIT_ERROR, EXIT_OK, debug, error, info, setVerbose, stage } from "./log.ts";
+import { acbPaths, readJson, readState, writeJson, writeState } from "./state.ts";
+import {
+  EXIT_ACTION_REQUIRED,
+  EXIT_ERROR,
+  EXIT_OK,
+  debug,
+  error,
+  info,
+  setVerbose,
+  stage,
+  warn,
+} from "./log.ts";
 import { countCallSites, scanRepo } from "./scan/index.ts";
 import type { Manifest } from "./types.ts";
+import { checkUpstream } from "./check/index.ts";
 
 const USAGE = `acb — self-maintaining API dependencies
 
@@ -220,6 +231,52 @@ function runScan(config: Config, args: ParsedArgs): number {
   return EXIT_OK;
 }
 
+/** Load the manifest, scanning first if there is none yet. */
+function requireManifest(config: Config): Manifest {
+  const paths = acbPaths(config.root);
+  const existing = readJson<Manifest | undefined>(paths.manifest, undefined);
+  if (existing) return existing;
+  debug("no manifest yet, scanning first");
+  const { manifest } = scanRepo(config);
+  writeJson(paths.manifest, manifest);
+  return manifest;
+}
+
+async function runCheck(config: Config, args: ParsedArgs): Promise<number> {
+  const manifest = requireManifest(config);
+  const state = readState(config.root);
+
+  const result = await checkUpstream(config, manifest, state, {
+    offline: args.flags.has("offline"),
+    baseline: args.flags.has("baseline"),
+    since: args.options.get("since"),
+  });
+  writeState(config.root, state);
+
+  if (args.json) {
+    info(JSON.stringify(result, null, 2));
+    return result.entries.length > 0 ? EXIT_ACTION_REQUIRED : EXIT_OK;
+  }
+
+  stage("check", `${result.entries.length} new upstream change(s)`);
+  for (const entry of result.entries) {
+    const tags = entry.tags.length ? ` [${entry.tags.join(", ")}]` : "";
+    info(`  ${entry.integrationId}: ${entry.title}${tags}`);
+  }
+  if (result.snapshotsWritten.length) {
+    debug(`snapshots updated: ${result.snapshotsWritten.join(", ")}`);
+  }
+  if (result.alreadySeen) debug(`${result.alreadySeen} change(s) already reported earlier`);
+  for (const integrationId of result.withoutSources) {
+    warn(
+      `${integrationId}: no upstream source configured. Add one under "sources" in ` +
+        `${CONFIG_FILENAME} (an OpenAPI URL or a changelog page).`,
+    );
+  }
+
+  return result.entries.length > 0 ? EXIT_ACTION_REQUIRED : EXIT_OK;
+}
+
 export async function main(argv: string[]): Promise<number> {
   let args: ParsedArgs;
   try {
@@ -256,8 +313,7 @@ export async function main(argv: string[]): Promise<number> {
       case "scan":
         return runScan(loadConfig(root), args);
       case "check":
-        loadConfig(root);
-        throw new NotImplementedError("check", "AIA-22/AIA-6");
+        return await runCheck(loadConfig(root), args);
       case "impact":
         loadConfig(root);
         throw new NotImplementedError("impact", "AIA-7/AIA-9");
