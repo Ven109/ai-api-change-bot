@@ -8,6 +8,7 @@ import type { Config } from "../config.ts";
 import type { CallSite, Integration, Manifest } from "../types.ts";
 import { debug } from "../log.ts";
 import { collectBaseUrlConstants, extractHttpCallSites } from "./http.ts";
+import { scanSdkIntegrations } from "./sdk.ts";
 import { languageOf, walkRepo } from "./walk.ts";
 
 export type ScanResult = {
@@ -35,6 +36,15 @@ export function scanRepo(config: Config): ScanResult {
   }
 
   const sharedConstants = collectSharedConstants(sources);
+
+  for (const integration of scanSdkIntegrations({
+    root: config.root,
+    sources,
+    includeDeps: config.includeDeps,
+    excludeDeps: config.excludeDeps,
+  })) {
+    integrations.set(integration.id, integration);
+  }
 
   for (const [file, { language, text: source }] of sources) {
     filesParsed++;

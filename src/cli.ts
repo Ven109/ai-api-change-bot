@@ -191,7 +191,14 @@ function runScan(config: Config, args: ParsedArgs): number {
       `${filesParsed} file(s) parsed`,
   );
   for (const integration of manifest.integrations) {
-    info(`  ${integration.id}`);
+    const version = integration.declaredVersion ? ` (${integration.declaredVersion})` : "";
+    info(`  ${integration.id}${version}`);
+    if (integration.kind === "sdk") {
+      // Member chains repeat a lot; the distinct ones are what matters here.
+      const members = [...new Set(integration.callSites.map((s) => s.member))].sort();
+      info(`    ${integration.callSites.length} usage(s): ${members.slice(0, 8).join(", ")}`);
+      continue;
+    }
     for (const site of integration.callSites) {
       const query = site.queryParams?.length ? `?${site.queryParams.join("&")}` : "";
       info(
