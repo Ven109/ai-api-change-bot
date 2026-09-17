@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+// Thin shim. Node >=22.18 strips the types in src/*.ts, so there is no build step.
+import { main } from "../src/cli.ts";
+
+process.exitCode = await main(process.argv.slice(2));
