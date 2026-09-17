@@ -25,6 +25,7 @@ import type {
 import { formatFailures, validateMigration, validationSummary } from "../validate/index.ts";
 import { runAgent } from "./agent.ts";
 import { buildBrief } from "./brief.ts";
+import { runExternalAgent } from "./external.ts";
 import { renderValidation, type ToolContext } from "./tools.ts";
 import {
   AGENT_FILES,
@@ -36,7 +37,8 @@ import {
 
 export type MigrateInput = {
   config: Config;
-  provider: ModelProvider;
+  /** Not needed when migrate.agent.type is "command". */
+  provider?: ModelProvider;
   /** Every relevant change for one integration. */
   items: ImpactItem[];
   candidates?: Candidate[];
@@ -74,6 +76,13 @@ export async function migrateIntegration(input: MigrateInput): Promise<Migration
     items.some((item) => item.entryId === candidate.entryId),
   );
 
+  const external = config.migrate.agent.type === "command";
+  if (!external && !provider) {
+    throw new ModelError(
+      'migrating needs either a model or migrate.agent.command. See "acb migrate --help".',
+    );
+  }
+
   const workspace = await createWorkspace(config, id);
   const context: ToolContext = {
     config,
@@ -107,22 +116,46 @@ export async function migrateIntegration(input: MigrateInput): Promise<Migration
   while (attempts < config.migrate.maxAttempts) {
     attempts++;
     llmStage(
-      provider.label,
+      external ? `command: ${config.migrate.agent.command}` : provider!.label,
       "migrate",
       `${integrationId}, attempt ${attempts}/${config.migrate.maxAttempts}`,
     );
 
     let budgetExhausted = false;
     try {
-      const outcome = await runAgent({
-        provider,
-        context,
-        brief: message,
-        maxSteps: config.migrate.maxSteps,
-        transcriptFile,
-      });
-      summary = outcome.summary;
-      budgetExhausted = outcome.status === "budget-exhausted";
+      if (external) {
+        const run = await runExternalAgent({
+          config,
+          workspaceDir: workspace.dir,
+          brief: message,
+        });
+        appendTranscript(transcriptFile, {
+          type: "external-agent",
+          attempt: attempts,
+          command: config.migrate.agent.command,
+          exitCode: run.exitCode,
+          timedOut: run.timedOut,
+          stdout: run.stdout.slice(-4000),
+          stderr: run.stderr.slice(-4000),
+        });
+        summary =
+          firstMeaningfulLine(run.stdout) ||
+          `The external agent exited with code ${run.exitCode}.`;
+        if (run.timedOut) {
+          budgetExhausted = true;
+          warn(`${integrationId}: the external agent timed out`);
+        }
+      } else {
+        const outcome = await runAgent({
+          provider: provider!,
+          context,
+          brief: message,
+          maxSteps: config.migrate.maxSteps,
+          transcriptFile,
+        });
+        summary = outcome.summary;
+        budgetExhausted = outcome.status === "budget-exhausted";
+      }
     } catch (err) {
       // A provider failure mid-attempt still leaves whatever was edited, which
       // is worth keeping and reporting rather than throwing away.
@@ -149,7 +182,9 @@ export async function migrateIntegration(input: MigrateInput): Promise<Migration
       message =
         `${brief}\n\n# Your previous attempt did not validate\n\n` +
         `${formatFailures(validation)}\n\n` +
-        `Fix these problems. Use run_validation to confirm, then call finish.`;
+        (external
+          ? `Fix these problems in this directory. The same checks will run again afterwards.`
+          : `Fix these problems. Use run_validation to confirm, then call finish.`);
     }
   }
 
@@ -182,6 +217,20 @@ export async function migrateIntegration(input: MigrateInput): Promise<Migration
     workspaceDir,
     error,
   };
+}
+
+function appendTranscript(file: string, entry: Record<string, unknown>): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.appendFileSync(file, JSON.stringify({ at: new Date().toISOString(), ...entry }) + "\n");
+}
+
+/** The agent's last substantive line of output, as its summary. */
+function firstMeaningfulLine(stdout: string): string {
+  const lines = stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 20);
+  return lines.at(-1)?.slice(0, 1000) ?? "";
 }
 
 /** Group relevant items by integration: one migration, one patch, one PR. */

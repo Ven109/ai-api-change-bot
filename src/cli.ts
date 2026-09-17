@@ -113,9 +113,15 @@ Copies the repository into an isolated workspace under .acb/work/, lets the
 configured agent edit it, then validates deterministically (repo tests,
 residual usage, HTTP contract check). Writes a patch; never merges anything.
 
+The agent is either the built-in one (any configured model) or your own
+coding agent, via migrate.agent = {"type":"command","command":"claude -p …"}.
+Either way acb writes the brief to ACB_TASK.md in the workspace and validates
+the result itself.
+
 Options:
-  --item <id>   Migrate a single impact item
-  --pr          Also open a draft/ready pull request
+  --item <id>          Migrate a single impact item
+  --keep-workspace     Leave .acb/work/<id> on disk for inspection
+  --pr                 Also open a draft/ready pull request
 `,
   run: `acb run — the whole loop
 
@@ -471,11 +477,13 @@ async function runMigrate(config: Config, args: ParsedArgs): Promise<number> {
     return EXIT_ERROR;
   }
 
+  const external = config.migrate.agent.type === "command";
   const provider = guard(createProvider(config), { config });
-  if (!provider) {
+  if (!provider && !external) {
     error(
-      'migrating needs a model. Configure "model" in ' +
-        `${CONFIG_FILENAME} (provider: anthropic | openai | replay).`,
+      'migrating needs a model or an external agent. Configure "model" in ' +
+        `${CONFIG_FILENAME} (provider: anthropic | openai | replay), or ` +
+        'set migrate.agent to {"type":"command","command":"claude -p …"}.',
     );
     return EXIT_ERROR;
   }
