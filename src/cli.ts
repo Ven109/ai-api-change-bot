@@ -29,6 +29,7 @@ import { checkUpstream } from "./check/index.ts";
 import { analyzeImpact } from "./impact/index.ts";
 import { createProvider } from "./model/index.ts";
 import { guard } from "./model/egress.ts";
+import { checkContracts, contractSummary } from "./validate/contract.ts";
 import { renderMarkdownReport, reportFileName } from "./impact/report.ts";
 import type { ChangeEntry } from "./types.ts";
 
@@ -41,6 +42,7 @@ Commands:
   check      Fetch upstream sources and report new API changes
   impact     Decide which upstream changes affect this repository
   migrate    Let an agent prepare a migration, then validate it
+  contract   Check HTTP call sites against the provider's API description
   run        The whole loop: scan -> check -> impact -> migrate -> validate
   config     Print the effective configuration
   version    Print the acb version
@@ -117,6 +119,15 @@ Usage: acb run [--no-llm] [--no-migrate] [--pr] [--offline] [--since <date>]
 
 Runs scan, check, impact and (for relevant items) migrate + validate, then
 writes patches or opens pull requests. Exits 2 when something needs a human.
+`,
+  contract: `acb contract — check calls against the provider's spec [deterministic]
+
+Usage: acb contract [<integration>] [--json]
+
+For every HTTP integration with an OpenAPI description, checks that each call
+site still matches the contract: the operation exists, it is not deprecated,
+and the query parameters are defined. Useful in CI on its own, since repository
+tests usually mock HTTP and keep passing when the real call is wrong.
 `,
   config: `acb config — print the effective configuration
 
@@ -405,6 +416,30 @@ async function runImpact(config: Config, args: ParsedArgs): Promise<number> {
   return result.items.some((item) => item.relevant) ? EXIT_ACTION_REQUIRED : EXIT_OK;
 }
 
+function runContract(config: Config, args: ParsedArgs): number {
+  const manifest = requireManifest(config);
+  const result = checkContracts({
+    config,
+    manifest,
+    integrationId: args.positionals[0],
+  });
+
+  if (args.json) {
+    info(JSON.stringify(result, null, 2));
+    return result.problems.some((p) => p.severity === "error") ? EXIT_ACTION_REQUIRED : EXIT_OK;
+  }
+
+  stage("contract", contractSummary(result));
+  for (const problem of result.problems) {
+    info(`  ${problem.severity}: ${problem.file}:${problem.line} — ${problem.message}`);
+  }
+  for (const integrationId of result.skipped) {
+    debug(`${integrationId}: no spec available, contract check skipped`);
+  }
+
+  return result.problems.some((p) => p.severity === "error") ? EXIT_ACTION_REQUIRED : EXIT_OK;
+}
+
 export async function main(argv: string[]): Promise<number> {
   let args: ParsedArgs;
   try {
@@ -447,6 +482,8 @@ export async function main(argv: string[]): Promise<number> {
       case "migrate":
         loadConfig(root);
         throw new NotImplementedError("migrate", "AIA-10/AIA-11");
+      case "contract":
+        return runContract(loadConfig(root), args);
       case "run":
         loadConfig(root);
         throw new NotImplementedError("run", "AIA-26");
