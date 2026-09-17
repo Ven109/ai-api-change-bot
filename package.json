@@ -14,10 +14,13 @@
     "acb": "node bin/acb",
     "test": "node --test \"test/*.test.ts\"",
     "demo": "node scripts/demo.ts",
-    "demo:clean": "rm -rf .demo"
+    "demo:clean": "rm -rf .demo",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test"
   },
   "license": "MIT",
   "devDependencies": {
-    "@types/node": "^22.20.3"
+    "@types/node": "^22.20.3",
+    "typescript": "^5.9.3"
   }
 }

@@ -1,0 +1,42 @@
+# acb's own CI. Everything runs offline: no API key, no network.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # The shipping fixture's own tests run under python.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dev dependencies
+        run: npm ci || npm install
+
+      - name: Types
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      # The demo is the end-to-end proof, so a broken loop fails CI.
+      - name: Offline demo
+        run: npm run demo
+
+      - name: Fixture suites pass as committed
+        run: |
+          (cd examples/weather-dashboard && npm test)
+          (cd examples/shipping-service && python3 -m unittest discover -s tests -t .)

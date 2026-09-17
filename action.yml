@@ -1,0 +1,113 @@
+name: acb — self-maintaining API dependencies
+description: >-
+  Detect upstream API and SDK changes, work out whether they affect this
+  repository, and open a pull request with the migration. Never merges.
+author: acb
+branding:
+  icon: git-pull-request
+  color: blue
+
+inputs:
+  provider:
+    description: >-
+      Model provider: anthropic, openai (also covers Azure/OpenRouter/Ollama via
+      base-url), replay (recorded responses, for trying it out), or none for a
+      deterministic report with no model calls.
+    required: false
+    default: anthropic
+  model:
+    description: Model id, e.g. claude-opus-5. Defaults to the provider's default.
+    required: false
+  base-url:
+    description: Override the provider's base URL (OpenAI-compatible endpoints).
+    required: false
+  api-key:
+    description: >-
+      The model API key, from a repository secret. Leave empty for the replay or
+      none providers.
+    required: false
+  args:
+    description: Extra arguments for `acb run`, e.g. "--no-migrate" or "--since 2026-01-01".
+    required: false
+    default: ""
+  pull-request:
+    description: Open a pull request for each migration. Set to "false" to only write patches.
+    required: false
+    default: "true"
+  working-directory:
+    description: Repository subdirectory to work on.
+    required: false
+    default: "."
+
+outputs:
+  exit-code:
+    description: 0 when there was nothing to do, 2 when something needs review.
+    value: ${{ steps.acb.outputs.exit-code }}
+  summary:
+    description: The run summary as JSON.
+    value: ${{ steps.acb.outputs.summary }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: "22"
+
+    # The manifest, the seen-upstream-changes state and the spec snapshots are
+    # what make a scheduled run incremental. Caching them keeps the bot from
+    # committing to the default branch just to remember things; the trade-off is
+    # that a cache eviction makes the next run re-baseline and report nothing
+    # new. Commit .acb/ instead if you would rather have that in git.
+    - name: Restore acb state
+      uses: actions/cache@v4
+      with:
+        path: ${{ inputs.working-directory }}/.acb
+        key: acb-state-${{ github.repository }}-${{ github.run_id }}
+        restore-keys: |
+          acb-state-${{ github.repository }}-
+
+    - name: Run acb
+      id: acb
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ACB_PROVIDER: ${{ inputs.provider }}
+        ACB_MODEL: ${{ inputs.model }}
+        ACB_BASE_URL: ${{ inputs.base-url }}
+        ANTHROPIC_API_KEY: ${{ inputs.api-key }}
+        OPENAI_API_KEY: ${{ inputs.api-key }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -o pipefail
+        pr_flag=""
+        if [ "${{ inputs.pull-request }}" = "true" ]; then pr_flag="--pr"; fi
+
+        # The action runs the CLI exactly as a developer would locally, so
+        # behaviour cannot drift between the two.
+        node "${{ github.action_path }}/bin/acb" run $pr_flag ${{ inputs.args }} \
+          2>&1 | tee acb-output.txt
+        code=${PIPESTATUS[0]}
+
+        node "${{ github.action_path }}/bin/acb" run --json ${{ inputs.args }} \
+          > acb-summary.json 2>/dev/null || true
+
+        {
+          echo "## acb"
+          echo
+          echo '```'
+          cat acb-output.txt
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        {
+          echo "summary<<ACB_EOF"
+          cat acb-summary.json
+          echo "ACB_EOF"
+        } >> "$GITHUB_OUTPUT"
+
+        # Exit 2 means "a human needs to look at this", which should not fail
+        # the workflow: the pull request is the deliverable.
+        if [ "$code" = "1" ]; then exit 1; fi

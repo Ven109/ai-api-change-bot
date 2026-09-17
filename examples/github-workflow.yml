@@ -1,0 +1,48 @@
+# Copy this into .github/workflows/acb.yml in your own repository.
+#
+# It checks your external APIs and SDKs every Monday morning and opens a pull
+# request when something upstream affects you. Nothing is ever merged.
+
+name: API changes
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write # to push the migration branch
+  pull-requests: write # to open the pull request
+
+jobs:
+  acb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Needed only if your validate.commands use them.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: Ven109/ai-api-change-bot@main
+        with:
+          provider: anthropic
+          model: claude-opus-5
+          api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # A first run on a repository has nothing to compare against, so it
+          # records a baseline and reports nothing. That is expected.
+          args: ""
+
+      # Prefer to try it without a key first? Use the bundled recordings:
+      #
+      #   - uses: Ven109/ai-api-change-bot@main
+      #     with:
+      #       provider: replay
+      #
+      # Or keep everything deterministic and skip the model entirely:
+      #
+      #   - uses: Ven109/ai-api-change-bot@main
+      #     with:
+      #       provider: none
+      #       args: "--no-llm"
