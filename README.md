@@ -81,8 +81,22 @@ node bin/acb config        # the effective configuration
 ```
 
 `scan` needs no configuration. To watch an API you need to tell acb where the
-provider publishes changes (there is no registry for HTTP APIs the way there is
-for packages), in `acb.config.json`:
+provider publishes changes — there is no registry for HTTP APIs the way there
+is for packages, so `acb sources suggest` goes looking for you:
+
+```sh
+node bin/acb sources suggest          # probe, verify, print the config to add
+node bin/acb sources suggest --write  # …and write it
+```
+
+It probes the well-known locations first (`/openapi.json`, `/changelog`, docs
+subdomains). Only if that finds nothing does it ask the model for candidates —
+and **every candidate is fetched and checked** before you see it, so a URL that
+does not return a real spec or a dated changelog is discarded rather than
+suggested. SDK dependencies skip all of this: their sources come from the
+package registry.
+
+The result goes in `acb.config.json`:
 
 ```jsonc
 {
@@ -122,6 +136,7 @@ Exit codes: `0` nothing to do · `1` error · `2` a human needs to look at this
 | `acb check` | fetch upstream sources, report new changes (`--offline`, `--baseline`, `--since <date>`) |
 | `acb impact` | decide what affects this repo (`--no-llm`, `--dry-run-llm`) |
 | `acb migrate` | prepare and validate a migration (`--item`, `--keep-workspace`) |
+| `acb sources suggest` | find where a provider publishes its changes (`--write` to save) |
 | `acb contract` | check your calls against the provider's spec — useful in CI on its own |
 | `acb run` | the whole loop (`--pr`, `--no-llm`, `--no-migrate`, `--offline`, `--json`) |
 | `acb config` | print the effective configuration |

@@ -32,6 +32,7 @@ import { createProvider } from "./model/index.ts";
 import { guard } from "./model/egress.ts";
 import { checkContracts, contractSummary } from "./validate/contract.ts";
 import { renderSummary, runLoop } from "./run.ts";
+import { discoverSources, renderSuggestions, type Suggestion } from "./check/discover.ts";
 import { groupByIntegration, migrateIntegration } from "./migrate/index.ts";
 import { validationSummary } from "./validate/index.ts";
 import type { Candidate, ImpactItem } from "./types.ts";
@@ -48,6 +49,7 @@ Commands:
   impact     Decide which upstream changes affect this repository
   migrate    Let an agent prepare a migration, then validate it
   contract   Check HTTP call sites against the provider's API description
+  sources    Suggest where an HTTP provider publishes its changes
   run        The whole loop: scan -> check -> impact -> migrate -> validate
   config     Print the effective configuration
   version    Print the acb version
@@ -152,6 +154,20 @@ For every HTTP integration with an OpenAPI description, checks that each call
 site still matches the contract: the operation exists, it is not deprecated,
 and the query parameters are defined. Useful in CI on its own, since repository
 tests usually mock HTTP and keep passing when the real call is wrong.
+`,
+  sources: `acb sources suggest — find where a provider publishes its changes
+
+Usage: acb sources suggest [<integration>] [--write] [--json]
+
+HTTP hosts have no registry to look them up in, so sources are configured by
+hand. This probes well-known locations first (/openapi.json, /changelog and
+friends) [deterministic], and only if that finds nothing asks the configured
+model for candidates [LLM]. Every candidate is fetched and checked before it is
+shown: a URL that does not return an actual spec or a dated changelog is
+discarded rather than suggested.
+
+Options:
+  --write    Add the confirmed sources to acb.config.json
 `,
   config: `acb config — print the effective configuration
 
@@ -440,6 +456,79 @@ async function runImpact(config: Config, args: ParsedArgs): Promise<number> {
   return result.items.some((item) => item.relevant) ? EXIT_ACTION_REQUIRED : EXIT_OK;
 }
 
+async function runSources(config: Config, args: ParsedArgs): Promise<number> {
+  if (args.positionals[0] && args.positionals[0] !== "suggest") {
+    throw new UsageError(`unknown subcommand: acb sources ${args.positionals[0]}`);
+  }
+
+  const manifest = requireManifest(config);
+  const wanted = args.positionals[1];
+  const targets = manifest.integrations
+    .filter((integration) => integration.kind === "http")
+    .filter((integration) => !wanted || integration.id === wanted)
+    .filter((integration) => (config.sources[integration.id] ?? []).length === 0 || wanted);
+
+  if (targets.length === 0) {
+    info("every HTTP integration already has a source configured");
+    return EXIT_OK;
+  }
+
+  const provider = args.flags.has("no-llm")
+    ? undefined
+    : guard(createProvider(config), { config });
+
+  const suggestions: Suggestion[] = [];
+  for (const integration of targets) {
+    stage("sources", `probing ${integration.id}`);
+    suggestions.push(
+      ...(await discoverSources(integration.id, {
+        provider,
+        offline: args.flags.has("offline"),
+      })),
+    );
+  }
+
+  if (args.json) {
+    info(JSON.stringify(suggestions, null, 2));
+    return suggestions.length ? EXIT_OK : EXIT_ACTION_REQUIRED;
+  }
+
+  if (suggestions.length === 0) {
+    warn(
+      "nothing confirmed. Add sources by hand: the provider's OpenAPI URL is best, " +
+        "a changelog page also works.",
+    );
+    return EXIT_ACTION_REQUIRED;
+  }
+
+  for (const suggestion of suggestions) {
+    info(`  ${suggestion.integrationId}`);
+    info(`    ${suggestion.source.type}: ${suggestion.source.url}`);
+    info(`    found by ${suggestion.foundBy}, verified: ${suggestion.evidence}`);
+  }
+
+  if (!args.flags.has("write")) {
+    info("");
+    info("Add to " + CONFIG_FILENAME + " (or re-run with --write):");
+    info(renderSuggestions(suggestions));
+    return EXIT_OK;
+  }
+
+  const configPath = path.join(config.root, CONFIG_FILENAME);
+  const raw = readJson<Record<string, unknown>>(configPath, {});
+  const sources = (raw.sources ?? {}) as Record<string, unknown[]>;
+  for (const suggestion of suggestions) {
+    sources[suggestion.integrationId] = [
+      ...(sources[suggestion.integrationId] ?? []),
+      suggestion.source,
+    ];
+  }
+  raw.sources = sources;
+  writeJson(configPath, raw);
+  info(`  written to ${configPath}`);
+  return EXIT_OK;
+}
+
 function runContract(config: Config, args: ParsedArgs): number {
   const manifest = requireManifest(config);
   const result = checkContracts({
@@ -590,6 +679,8 @@ export async function main(argv: string[]): Promise<number> {
         return await runImpact(loadConfig(root), args);
       case "migrate":
         return await runMigrate(loadConfig(root), args);
+      case "sources":
+        return await runSources(loadConfig(root), args);
       case "contract":
         return runContract(loadConfig(root), args);
       case "run": {
