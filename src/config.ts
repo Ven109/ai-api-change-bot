@@ -134,6 +134,8 @@ export function parseConfig(raw: unknown, root: string, configPath?: string): Co
     "$schema",
   ]);
   for (const key of Object.keys(raw)) {
+    // JSON has no comments, so "//" keys are the usual workaround. Allow them.
+    if (key.startsWith("//")) continue;
     if (!known.has(key)) throw new ConfigError(`unknown config key: ${key}`);
   }
 
