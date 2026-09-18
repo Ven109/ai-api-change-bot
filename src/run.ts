@@ -186,14 +186,19 @@ export async function runLoop(config: Config, options: RunOptions): Promise<RunR
   }
 
   // 4. migrate + validate [LLM agent, then deterministic]
+  // --no-llm is a promise that nothing reaches a model, and a coding agent is
+  // a model. Auto-detecting one must not quietly reintroduce it here.
   const canMigrate =
-    !options.noMigrate && (provider !== undefined || config.migrate.agent.type === "command");
+    !options.noMigrate &&
+    !options.noLlm &&
+    (provider !== undefined || config.migrate.agent.type !== "builtin");
   if (!canMigrate) {
     for (const item of relevant) {
       base.results.push(describeItem(item, "report-only"));
     }
-    if (options.noMigrate) debug("--no-migrate: stopping after the report");
-    else warn("no model or external agent configured, so no migration was attempted");
+    if (options.noLlm) debug("--no-llm: reporting only, no agent runs");
+    else if (options.noMigrate) debug("--no-migrate: stopping after the report");
+    else warn("no agent available and no model configured, so no migration was attempted");
     base.exitCode = EXIT_ACTION_REQUIRED;
     base.egress = provider?.summary();
     return base;

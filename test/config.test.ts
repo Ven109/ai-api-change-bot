@@ -31,7 +31,8 @@ test("a repo with no config file gets deterministic-only defaults", () => {
   assert.equal(config.model.provider, "none");
   assert.equal(config.configPath, undefined);
   assert.equal(config.impact.minScore, 0.4);
-  assert.equal(config.migrate.agent.type, "builtin");
+  // "auto" means: use a real coding agent if this machine has one.
+  assert.equal(config.migrate.agent.type, "auto");
   assert.deepEqual(config.validate.commands, []);
   assert.ok(config.ignore.includes("node_modules"));
   assert.ok(config.ignoreHosts.includes("localhost"));

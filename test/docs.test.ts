@@ -52,7 +52,11 @@ test("the quickstart and the limitations are both there", () => {
   assert.match(readme, /npm run demo/);
   assert.match(readme, /## Limitations, honestly/);
   // Claims that would be wrong if the code changed.
-  assert.match(readme, /zero runtime dependencies/);
+  assert.match(readme, /no required runtime dependencies/);
   const pkg = JSON.parse(fs.readFileSync(path.join(REPO, "package.json"), "utf8"));
-  assert.equal(pkg.dependencies, undefined, "README promises no runtime dependencies");
+  assert.equal(pkg.dependencies, undefined, "README promises no required runtime dependencies");
+  // The agent SDK must stay optional: acb has to install and run without it.
+  assert.deepEqual(Object.keys(pkg.optionalDependencies ?? {}), [
+    "@anthropic-ai/claude-agent-sdk",
+  ]);
 });

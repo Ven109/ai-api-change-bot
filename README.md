@@ -18,7 +18,8 @@ Raw HTTP integrations come first, because that is the gap: `fetch`, `axios`,
 `requests`, `httpx`. SDK dependencies are covered too, as a secondary case.
 
 Status: **working prototype.** Open source, CLI-first, bring your own model,
-zero runtime dependencies, no build step.
+no required runtime dependencies, no build step. (The Claude Agent SDK is an
+optional dependency, used only if you pick that agent.)
 
 ---
 
@@ -26,7 +27,7 @@ zero runtime dependencies, no build step.
 
 ```sh
 git clone <this repo> && cd ai-api-change-bot
-npm install       # dev dependencies only: @types/node and typescript
+npm install       # types, typescript, and the optional agent SDK
 npm run demo
 ```
 
@@ -152,7 +153,7 @@ Every key is optional; the defaults are what the demo uses.
 | `validate.commands` | `[]` | the checks a migration must pass. Empty means acb says so, loudly |
 | `validate.timeoutMs` | `120000` | per command |
 | `impact.minScore` | `0.4` | how strong the deterministic match must be to reach the model |
-| `migrate.agent` | `{ "type": "builtin" }` | or `{ "type": "command", "command": …, "promptVia": "stdin" \| "file" \| "arg" }` |
+| `migrate.agent` | `{ "type": "auto" }` | `"auto"` \| `"sdk"` \| `"builtin"` \| `{ "type": "command", "command": …, "promptVia": "stdin" \| "file" \| "arg" }` |
 | `migrate.maxSteps` | `30` | tool calls per attempt |
 | `migrate.maxAttempts` | `3` | validation failures fed back before giving up |
 | `privacy.mode` | `"snippets"` | or `"local-only"`, which refuses a remote provider |
@@ -170,7 +171,23 @@ Every key is optional; the defaults are what the demo uses.
 | `replay` | recorded responses — the demo and the test suite |
 | `none` | deterministic only; no model is ever contacted |
 
-Or keep the coding agent you already use and let acb do the rest:
+### Which agent does the edit
+
+acb does not try to be a good coding agent — that is a solved problem owned by
+people working on nothing else. By default (`migrate.agent.type: "auto"`) it
+uses whichever real agent your machine has:
+
+| Preference | What it is | Why |
+| --- | --- | --- |
+| 1. Claude Agent SDK | `npm i -D @anthropic-ai/claude-agent-sdk` (optional) | A maintained agent, plus a permission hook acb uses to enforce the workspace confinement. Uses your existing Claude Code login. |
+| 2. An agent CLI on PATH | `claude`, `codex`, `aider` | Same idea, no extra install. acb can only confine it by running it in the workspace copy. |
+| 3. The built-in loop | seven tools, ~150 lines | Works with any configured model and no install. The fallback, not the goal. |
+
+Whichever runs, the contract is identical: acb prepares the isolated copy,
+hands over the brief, and **validates the result itself** — no agent's word is
+taken for anything. The run says which agent it picked and how to change it.
+
+Pin one explicitly if you prefer:
 
 ```jsonc
 {
@@ -266,7 +283,10 @@ src/migrate/         [LLM agent] the edit
   tools.ts           the agent's tools, and the path confinement
   agent.ts           the tool-use loop
   brief.ts           the migration brief (also read by external agents)
-  external.ts        handing the edit to your own coding agent
+  external.ts        handing the edit to an agent CLI (claude -p, codex, aider)
+  sdk-agent.ts       handing it to the Claude Agent SDK, with a permission
+                     hook that enforces the workspace confinement
+  select.ts          which agent runs: auto-detection and the explanation
   index.ts           per-integration orchestration and the retry loop
 
 src/validate/        [deterministic] proof
@@ -293,7 +313,8 @@ check` typechecks and runs them; everything is offline.
 * **OpenAPI specs must be JSON.** YAML is reported as unsupported rather than
   half-parsed.
 * **Only JS/TS and Python** are scanned today.
-* **The agent is deliberately basic.** If you want a better one, plug it in.
+* **The built-in agent is deliberately basic.** It is the fallback; `auto`
+  prefers the Claude Agent SDK or an installed agent CLI, which are better.
 * **The demo's migration tool calls are scripted**, so it can run offline and in
   CI. The impact assessments in the recordings are genuine model output for the
   prompts acb generated. Both are labelled in the files and in the output.

@@ -39,7 +39,12 @@ export type Config = {
   validate: { commands: string[]; timeoutMs: number };
   impact: { minScore: number };
   migrate: {
-    agent: { type: "builtin" | "command"; command?: string; promptVia?: "stdin" | "arg" | "file" };
+    agent: {
+      /** "auto" picks the best agent available on this machine (see migrate/select.ts). */
+      type: "auto" | "sdk" | "builtin" | "command";
+      command?: string;
+      promptVia?: "stdin" | "arg" | "file";
+    };
     maxSteps: number;
     maxAttempts: number;
   };
@@ -84,7 +89,7 @@ function defaults(root: string): Config {
     sources: {},
     validate: { commands: [], timeoutMs: 120_000 },
     impact: { minScore: 0.4 },
-    migrate: { agent: { type: "builtin" }, maxSteps: 30, maxAttempts: 3 },
+    migrate: { agent: { type: "auto" }, maxSteps: 30, maxAttempts: 3 },
     privacy: { mode: "snippets", excludePaths: [".env", ".env.*", "*.pem", "*.key"] },
     ignore: [...DEFAULT_IGNORE],
     ignoreHosts: [...DEFAULT_IGNORE_HOSTS],
@@ -220,15 +225,17 @@ export function parseConfig(raw: unknown, root: string, configPath?: string): Co
     const m = raw.migrate;
     if (m.agent !== undefined) {
       if (!isObject(m.agent)) throw new ConfigError("migrate.agent must be an object");
-      const type = m.agent.type ?? "builtin";
-      if (type !== "builtin" && type !== "command") {
-        throw new ConfigError('migrate.agent.type must be "builtin" or "command"');
+      const type = m.agent.type ?? "auto";
+      if (!["auto", "sdk", "builtin", "command"].includes(type as string)) {
+        throw new ConfigError(
+          'migrate.agent.type must be "auto", "sdk", "builtin" or "command"',
+        );
       }
       if (type === "command" && typeof m.agent.command !== "string") {
         throw new ConfigError('migrate.agent.command is required when type is "command"');
       }
       cfg.migrate.agent = {
-        type,
+        type: type as Config["migrate"]["agent"]["type"],
         command: m.agent.command as string | undefined,
         promptVia: (m.agent.promptVia as "stdin" | "arg" | "file" | undefined) ?? "file",
       };
