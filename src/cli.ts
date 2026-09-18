@@ -491,16 +491,10 @@ async function runMigrate(config: Config, args: ParsedArgs): Promise<number> {
     return EXIT_ERROR;
   }
 
-  const external = config.migrate.agent.type === "command";
+  // Which agent runs is decided per migration (migrate/select.ts): a real
+  // coding agent if this machine has one, the built-in loop otherwise. Only
+  // the built-in loop needs a model, and it says so itself.
   const provider = guard(createProvider(config), { config });
-  if (!provider && !external) {
-    error(
-      'migrating needs a model or an external agent. Configure "model" in ' +
-        `${CONFIG_FILENAME} (provider: anthropic | openai | replay), or ` +
-        'set migrate.agent to {"type":"command","command":"claude -p …"}.',
-    );
-    return EXIT_ERROR;
-  }
 
   const wanted = args.options.get("item");
   const relevant = stored.items.filter(

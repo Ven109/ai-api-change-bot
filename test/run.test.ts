@@ -94,7 +94,7 @@ test("a second run finds nothing and exits 0", async () => {
   assert.match(stdout, /0 file\(s\) parsed, 3 cached/);
 });
 
-test("--no-llm produces a report and calls no model", async () => {
+test("--no-llm produces a report and runs nothing model-powered", async () => {
   const root = fixtureCopy("weather-dashboard");
   const { code, stdout } = await acb(["run", "--offline", "--no-llm"], root, {
     // A provider that would throw if it were ever called.
@@ -103,7 +103,9 @@ test("--no-llm produces a report and calls no model", async () => {
   });
 
   assert.equal(code, 2);
+  // Not the impact model, and not a coding agent either: an agent is a model.
   assert.doesNotMatch(stdout, /\[LLM/);
+  assert.doesNotMatch(stdout, /migrate:/);
   assert.match(stdout, /report-only/);
   const report = fs.readdirSync(path.join(root, ".acb", "reports"));
   const markdown = fs.readFileSync(

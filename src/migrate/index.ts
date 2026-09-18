@@ -26,6 +26,8 @@ import { formatFailures, validateMigration, validationSummary } from "../validat
 import { runAgent } from "./agent.ts";
 import { buildBrief } from "./brief.ts";
 import { runExternalAgent } from "./external.ts";
+import { explainSelection, selectAgent } from "./select.ts";
+import { runSdkAgent } from "./sdk-agent.ts";
 import { renderValidation, type ToolContext } from "./tools.ts";
 import {
   AGENT_FILES,
@@ -76,10 +78,12 @@ export async function migrateIntegration(input: MigrateInput): Promise<Migration
     items.some((item) => item.entryId === candidate.entryId),
   );
 
-  const external = config.migrate.agent.type === "command";
-  if (!external && !provider) {
+  const agent = await selectAgent(config);
+  info(`  ${explainSelection(agent)}`);
+  if (agent.kind === "builtin" && !provider) {
     throw new ModelError(
-      'migrating needs either a model or migrate.agent.command. See "acb migrate --help".',
+      "migrating needs an agent: install one (npm i -D @anthropic-ai/claude-agent-sdk, or the " +
+        'claude/codex/aider CLI), or configure a model for the built-in loop.',
     );
   }
 
@@ -116,14 +120,33 @@ export async function migrateIntegration(input: MigrateInput): Promise<Migration
   while (attempts < config.migrate.maxAttempts) {
     attempts++;
     llmStage(
-      external ? `command: ${config.migrate.agent.command}` : provider!.label,
+      agent.kind === "builtin" ? provider!.label : agent.label,
       "migrate",
       `${integrationId}, attempt ${attempts}/${config.migrate.maxAttempts}`,
     );
 
     let budgetExhausted = false;
     try {
-      if (external) {
+      if (agent.kind === "sdk") {
+        const run = await runSdkAgent({
+          config,
+          workspaceDir: workspace.dir,
+          brief: message,
+        });
+        for (const event of run.events) {
+          appendTranscript(transcriptFile, {
+            type: "sdk-agent",
+            attempt: attempts,
+            tool: event.name,
+            detail: event.detail,
+          });
+        }
+        summary = run.summary || "(the agent gave no summary)";
+        if (run.error) {
+          warn(`${integrationId}: ${run.error}`);
+          budgetExhausted = true;
+        }
+      } else if (agent.kind === "command") {
         const run = await runExternalAgent({
           config,
           workspaceDir: workspace.dir,
@@ -132,7 +155,7 @@ export async function migrateIntegration(input: MigrateInput): Promise<Migration
         appendTranscript(transcriptFile, {
           type: "external-agent",
           attempt: attempts,
-          command: config.migrate.agent.command,
+          command: agent.command,
           exitCode: run.exitCode,
           timedOut: run.timedOut,
           stdout: run.stdout.slice(-4000),
@@ -182,7 +205,7 @@ export async function migrateIntegration(input: MigrateInput): Promise<Migration
       message =
         `${brief}\n\n# Your previous attempt did not validate\n\n` +
         `${formatFailures(validation)}\n\n` +
-        (external
+        (agent.kind !== "builtin"
           ? `Fix these problems in this directory. The same checks will run again afterwards.`
           : `Fix these problems. Use run_validation to confirm, then call finish.`);
     }

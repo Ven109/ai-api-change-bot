@@ -35,6 +35,9 @@ function weatherCopy(): string {
   const configPath = path.join(root, "acb.config.json");
   const raw = JSON.parse(fs.readFileSync(configPath, "utf8"));
   raw.validate = { commands: ["node test/weather.test.js"] };
+  // These tests are about the built-in loop specifically; "auto" would pick a
+  // real agent when one is installed on the machine running the suite.
+  raw.migrate = { agent: { type: "builtin" } };
   fs.writeFileSync(configPath, JSON.stringify(raw));
   return root;
 }
@@ -142,7 +145,7 @@ test("a failing migration is retried, then reported as failed", async () => {
   };
 
   const outcome = await migrateIntegration({
-    config: { ...config, migrate: { ...config.migrate, maxAttempts: 2 } },
+    config: { ...config, migrate: { ...config.migrate, agent: { type: "builtin" }, maxAttempts: 2 } },
     provider: new ReplayProvider(halfMigration),
     items: impact.items,
     candidates: impact.candidates,
@@ -169,7 +172,7 @@ test("an exhausted step budget ends as incomplete, with the transcript kept", as
   const outcome = await migrateIntegration({
     config: {
       ...config,
-      migrate: { ...config.migrate, maxSteps: 2, maxAttempts: 1 },
+      migrate: { ...config.migrate, agent: { type: "builtin" }, maxSteps: 2, maxAttempts: 1 },
     },
     provider: new ReplayProvider(dithering),
     items: impact.items,
