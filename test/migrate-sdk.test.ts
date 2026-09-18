@@ -177,6 +177,24 @@ test("auto picks a real agent on this machine, and says so", async () => {
   }
 });
 
+test("auto does not pick the SDK when nothing can authenticate", async () => {
+  const dir = workspace();
+  const key = process.env.ANTHROPIC_API_KEY;
+  const realPath = process.env.PATH;
+  delete process.env.ANTHROPIC_API_KEY;
+  // An empty PATH means no claude/codex/aider binary is reachable.
+  process.env.PATH = "";
+  try {
+    const selected = await selectAgent(parseConfig(undefined, dir));
+    // Installed-but-unusable must not win: CI installs the optional SDK and
+    // has no credentials, and picking it there broke every migration.
+    assert.equal(selected.kind, "builtin");
+  } finally {
+    process.env.PATH = realPath;
+    if (key !== undefined) process.env.ANTHROPIC_API_KEY = key;
+  }
+});
+
 test("the config rejects an unknown agent type", () => {
   assert.throws(
     () => parseConfig({ migrate: { agent: { type: "magic" } } }, "/repo"),

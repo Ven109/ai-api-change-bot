@@ -30,6 +30,9 @@ function fixtureCopy(name: string, patchConfig?: (config: any) => void): string 
   if (name === "weather-dashboard") {
     config.validate = { commands: ["node test/weather.test.js"] };
   }
+  // These tests drive the whole pipeline from recorded responses, so the
+  // agent has to be the built-in loop. "auto" would reach for a real one.
+  config.migrate = { agent: { type: "builtin" }, ...(config.migrate ?? {}) };
   patchConfig?.(config);
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
   return root;

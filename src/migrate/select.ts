@@ -42,6 +42,12 @@ export async function isOnPath(binary: string): Promise<boolean> {
   }
 }
 
+/** Whether an agent could actually authenticate on this machine. */
+export async function canAuthenticate(): Promise<boolean> {
+  if (process.env.ANTHROPIC_API_KEY) return true;
+  return isOnPath("claude");
+}
+
 export async function selectAgent(config: Config): Promise<SelectedAgent> {
   const configured = config.migrate.agent;
 
@@ -61,7 +67,12 @@ export async function selectAgent(config: Config): Promise<SelectedAgent> {
   }
 
   // auto
-  if (await isSdkAvailable()) {
+  //
+  // The SDK being installed is not enough: it drives the Claude Code CLI, so
+  // without that CLI or an API key it cannot authenticate and every migration
+  // would fail at the first turn. CI found this the hard way — the optional
+  // dependency was installed there, and nothing could run.
+  if ((await isSdkAvailable()) && (await canAuthenticate())) {
     debug("auto: using the Claude Agent SDK");
     return { kind: "sdk", label: "claude agent sdk (auto-detected)" };
   }
