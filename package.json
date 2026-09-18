@@ -1,0 +1,21 @@
+{
+  "name": "acb",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-maintaining API dependencies: detect upstream API/SDK changes, judge repository impact, and prepare a migration PR.",
+  "type": "module",
+  "bin": {
+    "acb": "bin/acb"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "acb": "node bin/acb",
+    "test": "node --test \"test/*.test.ts\""
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.20.3"
+  }
+}

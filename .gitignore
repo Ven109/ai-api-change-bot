@@ -1,0 +1,11 @@
+node_modules/
+
+# Throwaway migration workspaces. Everything else under .acb/ is meant to be
+# committed: the manifest, the seen-changes state and the spec snapshots are
+# what make later runs incremental.
+.acb/work/
+.acb/egress/
+
+.DS_Store
+__pycache__/
+*.pyc
