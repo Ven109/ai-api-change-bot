@@ -11,6 +11,7 @@ import type { ChangeEntry, Manifest } from "../types.ts";
 import { debug, warn } from "../log.ts";
 import { acbPaths, type AcbState } from "../state.ts";
 import { parseChangelog } from "./changelog.ts";
+import { explainSkipped, probeDeprecationHeaders } from "./headers.ts";
 import { diffSpecs } from "./openapi.ts";
 import { fetchSdkChanges, resolveSource, type ResolvedSource } from "./registry.ts";
 import { loadSource, snapshotName } from "./sources.ts";
@@ -71,6 +72,17 @@ export async function checkUpstream(
     for (const spec of sources) {
       const loaded = await loadSource(spec, { root: config.root, offline: options.offline });
       if (!loaded) continue;
+
+      if (spec.type === "headers") {
+        // The API itself is the source: no spec, no changelog, no docs site.
+        const probe = await probeDeprecationHeaders(integration, config, {
+          offline: options.offline,
+          fetchImpl: options.fetchImpl,
+        });
+        explainSkipped(probe, integration.id);
+        result.entries.push(...probe.entries);
+        continue;
+      }
 
       if (spec.type === "changelog") {
         const entries = parseChangelog(loaded.text, {

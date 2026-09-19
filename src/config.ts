@@ -8,7 +8,12 @@ import fs from "node:fs";
 import path from "node:path";
 
 export type SourceSpec = {
-  type: "openapi" | "changelog";
+  /**
+   * "headers" asks the endpoints themselves for RFC 9745 Deprecation and
+   * RFC 8594 Sunset headers. Opt-in: it is the only source that makes live
+   * requests to the provider.
+   */
+  type: "openapi" | "changelog" | "headers";
   /** Remote source. Exactly one of url/path is required. */
   url?: string;
   /** Local source, relative to the repo root. Handy for tests and demos. */
@@ -101,7 +106,7 @@ function defaults(root: string): Config {
 export class ConfigError extends Error {}
 
 const PROVIDERS = new Set(["none", "anthropic", "openai", "claude-cli", "replay"]);
-const SOURCE_TYPES = new Set(["openapi", "changelog"]);
+const SOURCE_TYPES = new Set(["openapi", "changelog", "headers"]);
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -181,7 +186,13 @@ export function parseConfig(raw: unknown, root: string, configPath?: string): Co
         if (typeof entry.type !== "string" || !SOURCE_TYPES.has(entry.type)) {
           throw new ConfigError(`${where}.type must be one of: ${[...SOURCE_TYPES].join(", ")}`);
         }
-        if (typeof entry.url !== "string" && typeof entry.path !== "string") {
+        // A header probe targets the call sites already in the manifest, so it
+        // needs neither a url nor a path.
+        if (
+          entry.type !== "headers" &&
+          typeof entry.url !== "string" &&
+          typeof entry.path !== "string"
+        ) {
           throw new ConfigError(`${where} needs either a url or a path`);
         }
         if (entry.url !== undefined && entry.path !== undefined) {

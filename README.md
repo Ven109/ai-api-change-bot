@@ -69,7 +69,7 @@ stage as it runs (`[deterministic]` / `[LLM anthropic/claude-opus-5]`).
 | Stage | Kind | What it does | What is sent to the model |
 | --- | --- | --- | --- |
 | `scan` | deterministic | Finds HTTP call sites (host, method, path template, query params) and SDK usage; writes an incremental manifest | nothing |
-| `check` | deterministic | Diffs the provider's OpenAPI spec against a snapshot, and splits changelog pages into entries | nothing |
+| `check` | deterministic | Diffs the provider's OpenAPI spec against a snapshot, reads Deprecation/Sunset response headers, and splits changelog pages into entries | nothing |
 | `impact` (1) | deterministic | Matches change identifiers against real call sites. **No match, no further work** | nothing |
 | `impact` (2) | **LLM** | Judges whether a matched change really affects you, how risky it is, and drafts the migration | the change text plus the matched snippets (±15 lines), never whole files |
 | `migrate` | **LLM agent** | Edits an isolated copy of the repository | files the agent reads, all logged |
@@ -110,6 +110,11 @@ The result goes in `acb.config.json`:
 ```jsonc
 {
   "sources": {
+    // The API telling you itself: RFC 9745 Deprecation and RFC 8594 Sunset
+    // response headers, read from the endpoints your code calls. No spec and
+    // no changelog needed. Opt-in — it is the only source that makes live
+    // requests to the provider.
+    "http:api.example.com": [{ "type": "headers" }],
     // Best case: the provider publishes an OpenAPI description.
     "http:api.stripe.com": [
       { "type": "openapi", "url": "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json" }
@@ -280,6 +285,8 @@ src/scan/            [deterministic] discovery
 src/check/           [deterministic] upstream change detection
   openapi.ts         spec snapshot diffing (the precise signal)
   changelog.ts       prose sources: splitting, dates, tags, identifiers
+  headers.ts         RFC 9745 Deprecation / RFC 8594 Sunset, straight from
+                     the endpoints the repository calls
   sources.ts         fetching a source from a URL or a file
 
 src/impact/          the boundary
