@@ -26,6 +26,14 @@ inputs:
       The model API key, from a repository secret. Leave empty for the replay or
       none providers.
     required: false
+  observe:
+    description: >-
+      Also call the APIs and compare their responses against the contracts in
+      .acb/observations/. This is what catches changes that were never
+      announced anywhere, including the HTTP-200 kind that no schema check can
+      see. Needs whatever credentials those endpoints require, from env.
+    required: false
+    default: "false"
   args:
     description: Extra arguments for `acb run`, e.g. "--no-migrate" or "--since 2026-01-01".
     required: false
@@ -83,10 +91,12 @@ runs:
         set -o pipefail
         pr_flag=""
         if [ "${{ inputs.pull-request }}" = "true" ]; then pr_flag="--pr"; fi
+        observe_flag=""
+        if [ "${{ inputs.observe }}" = "true" ]; then observe_flag="--observe"; fi
 
         # The action runs the CLI exactly as a developer would locally, so
         # behaviour cannot drift between the two.
-        node "${{ github.action_path }}/bin/acb" run $pr_flag ${{ inputs.args }} \
+        node "${{ github.action_path }}/bin/acb" run $pr_flag $observe_flag ${{ inputs.args }} \
           2>&1 | tee acb-output.txt
         code=${PIPESTATUS[0]}
 

@@ -31,6 +31,7 @@ import { analyzeImpact } from "./impact/index.ts";
 import { createProvider } from "./model/index.ts";
 import { guard } from "./model/egress.ts";
 import { checkContracts, contractSummary } from "./validate/contract.ts";
+import { driftToChangeEntries, observe, renderObserve } from "./observe/index.ts";
 import { renderSummary, runLoop } from "./run.ts";
 import { discoverSources, renderSuggestions, type Suggestion } from "./check/discover.ts";
 import { groupByIntegration, migrateIntegration } from "./migrate/index.ts";
@@ -49,6 +50,7 @@ Commands:
   impact     Decide which upstream changes affect this repository
   migrate    Let an agent prepare a migration, then validate it
   contract   Check HTTP call sites against the provider's API description
+  observe    Record what the APIs actually return, and notice when it changes
   sources    Suggest where an HTTP provider publishes its changes
   run        The whole loop: scan -> check -> impact -> migrate -> validate
   config     Print the effective configuration
@@ -145,6 +147,7 @@ Options:
   --since <date>     Ignore upstream entries older than this
   --keep-workspace   Leave .acb/work/<id> on disk for inspection
   --pr               Open a pull request for each validated migration
+  --observe          Also call the APIs and compare against recorded contracts
 `,
   contract: `acb contract — check calls against the provider's spec [deterministic]
 
@@ -154,6 +157,46 @@ For every HTTP integration with an OpenAPI description, checks that each call
 site still matches the contract: the operation exists, it is not deprecated,
 and the query parameters are defined. Useful in CI on its own, since repository
 tests usually mock HTTP and keep passing when the real call is wrong.
+`,
+  observe: `acb observe — record what the APIs actually return [deterministic]
+
+Usage: acb observe [<integration>] [--check] [--dry-run] [--samples <n>] [--json]
+
+Calls this repository's own GET endpoints and records a per-field profile of
+the response: which fields are present, their types, and whether they are null
+or empty. It records classes, never values, so nothing sensitive is written to
+disk and nothing leaves your machine.
+
+  acb observe            record the baseline into .acb/observations/ (commit it)
+  acb observe --check    call again and report what drifted
+
+This catches what a spec cannot. In the breakage dataset (eval/FINDINGS.md) the
+changes that hurt people longest were HTTP 200 with an unchanged schema: a field
+that quietly moved, an object that became null, a string that became "". Error
+monitoring cannot see those, because nothing errors.
+
+Drift is only reported for always-to-always transitions — a field that was
+present every time and is now absent every time. A field that was sometimes
+missing was always optional, and is never reported. Below 3 samples
+nothing is claimed at all.
+
+Options:
+  --check          Compare against the recorded baseline instead of recording
+  --dry-run        Print what would be called, without calling anything
+  --samples <n>    Calls per endpoint per run (default 3)
+  --min-samples <n>  Lower the confidence floor (for testing)
+
+Authentication comes from your environment. In acb.config.json:
+
+  "observe": {
+    "api.stripe.com": {
+      "auth": { "header": "Authorization", "value": "Bearer \${STRIPE_KEY}" },
+      "paths": ["/v1/subscriptions/sub_123"]
+    }
+  }
+
+Templated paths such as /v1/users/{id} are skipped unless you list a concrete
+one, because there is no safe id to invent. Only GET is ever called.
 `,
   sources: `acb sources suggest — find where a provider publishes its changes
 
@@ -553,6 +596,57 @@ function runContract(config: Config, args: ParsedArgs): number {
   return result.problems.some((p) => p.severity === "error") ? EXIT_ACTION_REQUIRED : EXIT_OK;
 }
 
+async function runObserve(config: Config, args: ParsedArgs): Promise<number> {
+  const manifest = requireManifest(config);
+  const check = args.flags.has("check");
+
+  const result = await observe({
+    config,
+    manifest,
+    check,
+    integrationId: args.positionals[0],
+    dryRun: args.flags.has("dry-run"),
+    samples: numberOption(args, "samples"),
+    minSamples: numberOption(args, "min-samples"),
+  });
+
+  if (args.json) {
+    info(JSON.stringify(result, null, 2));
+    return result.actionRequired ? EXIT_ACTION_REQUIRED : EXIT_OK;
+  }
+
+  const breaking = result.findings.filter((finding) => finding.severity === "breaking").length;
+  stage(
+    "observe",
+    check
+      ? `${result.findings.length} drift(s), ${breaking} breaking`
+      : `${result.recorded.length} endpoint(s) recorded`,
+  );
+  info(renderObserve(result));
+
+  // Observed drift is an upstream change like any other, so it lands where
+  // `acb check` puts its findings and the rest of the pipeline just works.
+  if (check && breaking > 0) {
+    const entries = driftToChangeEntries(result);
+    writeJson(acbPaths(config.root).changes, {
+      generatedAt: new Date().toISOString(),
+      entries,
+    });
+  }
+
+  return result.actionRequired ? EXIT_ACTION_REQUIRED : EXIT_OK;
+}
+
+function numberOption(args: ParsedArgs, name: string): number | undefined {
+  const raw = args.options.get(name);
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1) {
+    throw new UsageError(`--${name} must be a positive integer`);
+  }
+  return value;
+}
+
 type StoredImpact = {
   items: ImpactItem[];
   candidates: Candidate[];
@@ -677,6 +771,8 @@ export async function main(argv: string[]): Promise<number> {
         return await runSources(loadConfig(root), args);
       case "contract":
         return runContract(loadConfig(root), args);
+      case "observe":
+        return await runObserve(loadConfig(root), args);
       case "run": {
         const config = loadConfig(root);
         const result = await runLoop(config, {
@@ -687,6 +783,7 @@ export async function main(argv: string[]): Promise<number> {
           dryRunLlm: args.flags.has("dry-run-llm") || args.flags.has("print-prompts"),
           since: args.options.get("since"),
           keepWorkspace: args.flags.has("keep-workspace"),
+          observe: args.flags.has("observe"),
           json: args.json,
         });
         info(args.json ? JSON.stringify(result, null, 2) : renderSummary(result));
