@@ -1,9 +1,14 @@
-// `npm run demo` — the whole loop on both fixtures, offline.
+// `npm run demo` — the whole loop on both fixtures.
 //
 // Each fixture is copied into .demo/ first, so the demo never modifies the
-// examples in place and can be re-run at will. The model is the replay
-// provider, so no API key and no network are needed; the same fixtures work
-// with a real model by setting ACB_PROVIDER/ACB_MODEL instead.
+// examples in place and can be re-run at will.
+//
+//   npm run demo          recorded responses: no key, no network, no cost
+//   npm run demo:real     your own model and a real agent, end to end
+//
+// "real" needs no API key either: the analysis runs through the Claude Code
+// CLI you are already logged into, and the edit through whichever agent is
+// installed. Override with ACB_PROVIDER/ACB_MODEL for anything else.
 
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -35,16 +40,24 @@ const FIXTURES: Fixture[] = [
   },
 ];
 
+/** --real runs on the user's own model instead of the recordings. */
+const real = process.argv.includes("--real");
+
 async function run(args: string[], cwd: string): Promise<number> {
   return new Promise((resolve, reject) => {
     const child = spawn("node", [acb, ...args], {
       cwd,
       stdio: "inherit",
-      env: {
-        ...process.env,
-        ACB_PROVIDER: "replay",
-        ACB_REPLAY_FILE: "replay/run.json",
-      },
+      env: real
+        ? {
+            ...process.env,
+            ACB_PROVIDER: process.env.ACB_PROVIDER ?? "claude-cli",
+          }
+        : {
+            ...process.env,
+            ACB_PROVIDER: "replay",
+            ACB_REPLAY_FILE: "replay/run.json",
+          },
     });
     child.on("error", reject);
     child.on("close", (code) => resolve(code ?? 1));
@@ -73,6 +86,15 @@ for (const fixture of FIXTURES) {
 
   heading(`${fixture.name}\n${fixture.why}`);
 
+  if (real) {
+    // Let the agent be chosen automatically (SDK, then an agent CLI), rather
+    // than the built-in loop the recordings drive.
+    const configPath = path.join(target, "acb.config.json");
+    const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    config.migrate = { ...(config.migrate ?? {}), agent: { type: "auto" } };
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+  }
+
   if (fixture.baselineSource && fixture.releaseSource) {
     // First run: record the provider's spec as it is today. Nothing to report.
     setSource(target, fixture.baselineSource.integrationId, fixture.baselineSource.path);
@@ -89,9 +111,20 @@ for (const fixture of FIXTURES) {
 }
 
 heading("Done");
-console.log(`
+console.log(
+  real
+    ? `
+Everything above ran on your own model: the analysis through the Claude Code
+CLI, the edit through whichever agent this machine has. No API key involved —
+it used the login you already had.
+`
+    : `
 Everything above ran offline with recorded model responses, labelled
-"replay (recorded responses, not a live model)" in the output.
+"replay (recorded responses, not a live model)" in the output. Run
+\`npm run demo:real\` to do the same with your own model.
+`,
+);
+console.log(`
 
 What to look at:
   .demo/*/.acb/reports/*.md        the impact reports
@@ -99,10 +132,12 @@ What to look at:
   .demo/*/.acb/reports/*.jsonl     what the agent did, tool call by tool call
   .demo/*/.acb/manifest.json       the integrations acb discovered
 
-To run the same thing with a real model:
-  cd .demo/weather-dashboard
-  ANTHROPIC_API_KEY=… ACB_PROVIDER=anthropic node ../../bin/acb run --offline
+Running it on your own model:
+  npm run demo:real                          your Claude Code login, no API key
+  ACB_PROVIDER=anthropic ANTHROPIC_API_KEY=… npm run demo:real
+  ACB_PROVIDER=openai ACB_BASE_URL=http://localhost:11434/v1 npm run demo:real
 
-Or with your own coding agent doing the edit, and acb doing everything else:
+Pinning a particular agent for the edit, instead of auto-detection:
+  migrate.agent = {"type":"sdk"}
   migrate.agent = {"type":"command","command":"claude -p --permission-mode acceptEdits","promptVia":"stdin"}
 `);

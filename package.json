@@ -16,7 +16,8 @@
     "demo": "node scripts/demo.ts",
     "demo:clean": "rm -rf .demo",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm test"
+    "check": "npm run typecheck && npm test",
+    "demo:real": "node scripts/demo.ts --real"
   },
   "license": "MIT",
   "devDependencies": {

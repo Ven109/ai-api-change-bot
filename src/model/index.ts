@@ -6,6 +6,7 @@ import path from "node:path";
 import type { Config } from "../config.ts";
 import { debug, warn } from "../log.ts";
 import { AnthropicProvider } from "./anthropic.ts";
+import { ClaudeCliProvider } from "./claude-cli.ts";
 import { OpenAiProvider } from "./openai.ts";
 import { ReplayProvider } from "./replay.ts";
 import {
@@ -18,6 +19,7 @@ import {
 export * from "./provider.ts";
 export { AnthropicProvider, DEFAULT_ANTHROPIC_MODEL } from "./anthropic.ts";
 export { OpenAiProvider, isLocalBaseUrl } from "./openai.ts";
+export { ClaudeCliProvider } from "./claude-cli.ts";
 export { ReplayProvider, type Recording } from "./replay.ts";
 
 /** The configured provider, or undefined in deterministic-only mode. */
@@ -41,6 +43,10 @@ export function createProvider(config: Config): ModelProvider | undefined {
         maxTokens: model.maxTokens,
         temperature: model.temperature,
       });
+    case "claude-cli":
+      // Uses whatever credentials the Claude Code CLI already has, so a
+      // subscription works with no API key.
+      return new ClaudeCliProvider({ model: model.model });
     case "replay": {
       const file = model.replayFile ?? process.env.ACB_REPLAY_FILE;
       if (!file) {

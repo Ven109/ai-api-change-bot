@@ -19,7 +19,7 @@ export type SourceSpec = {
 
 export type ModelConfig = {
   /** "none" means deterministic-only: no model is ever called. */
-  provider: "none" | "anthropic" | "openai" | "replay";
+  provider: "none" | "anthropic" | "openai" | "claude-cli" | "replay";
   model?: string;
   baseUrl?: string;
   apiKeyEnv?: string;
@@ -100,7 +100,7 @@ function defaults(root: string): Config {
 
 export class ConfigError extends Error {}
 
-const PROVIDERS = new Set(["none", "anthropic", "openai", "replay"]);
+const PROVIDERS = new Set(["none", "anthropic", "openai", "claude-cli", "replay"]);
 const SOURCE_TYPES = new Set(["openapi", "changelog"]);
 
 function isObject(v: unknown): v is Record<string, unknown> {

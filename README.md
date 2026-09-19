@@ -28,7 +28,15 @@ optional dependency, used only if you pick that agent.)
 ```sh
 git clone <this repo> && cd ai-api-change-bot
 npm install       # types, typescript, and the optional agent SDK
-npm run demo
+npm run demo      # recorded responses: no key, no network, no cost
+```
+
+Already logged into Claude Code? Run the same thing for real, still with no
+API key — the analysis goes through the `claude` CLI and the edit through
+whichever agent you have installed:
+
+```sh
+npm run demo:real
 ```
 
 The demo runs the whole loop on two example repositories, in copies under
@@ -168,6 +176,7 @@ Every key is optional; the defaults are what the demo uses.
 | --- | --- |
 | `anthropic` | `ANTHROPIC_API_KEY`. Defaults to `claude-opus-5` |
 | `openai` | `OPENAI_API_KEY`. Set `baseUrl` for Azure, OpenRouter, vLLM, or Ollama (`http://localhost:11434/v1`) |
+| `claude-cli` | drives the Claude Code CLI you are already logged into. **No API key**: a Claude subscription is enough for the whole loop |
 | `replay` | recorded responses — the demo and the test suite |
 | `none` | deterministic only; no model is ever contacted |
 
