@@ -147,6 +147,7 @@ Options:
   --since <date>     Ignore upstream entries older than this
   --keep-workspace   Leave .acb/work/<id> on disk for inspection
   --pr               Open a pull request for each validated migration
+  --observe          Also call the APIs and compare against recorded contracts
 `,
   contract: `acb contract — check calls against the provider's spec [deterministic]
 
@@ -782,6 +783,7 @@ export async function main(argv: string[]): Promise<number> {
           dryRunLlm: args.flags.has("dry-run-llm") || args.flags.has("print-prompts"),
           since: args.options.get("since"),
           keepWorkspace: args.flags.has("keep-workspace"),
+          observe: args.flags.has("observe"),
           json: args.json,
         });
         info(args.json ? JSON.stringify(result, null, 2) : renderSummary(result));

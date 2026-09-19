@@ -23,6 +23,7 @@ import { guard } from "./model/egress.ts";
 import { createProvider } from "./model/index.ts";
 import { groupByIntegration, migrateIntegration, type MigrationOutcome } from "./migrate/index.ts";
 import { openPullRequest } from "./deliver/pr.ts";
+import { driftToChangeEntries, observe } from "./observe/index.ts";
 import { countCallSites, scanRepo } from "./scan/index.ts";
 import { acbPaths, readJson, readState, writeFile, writeJson, writeState } from "./state.ts";
 import type { ImpactItem, Manifest, MigrationStatus } from "./types.ts";
@@ -38,6 +39,12 @@ export type RunOptions = {
   since?: string;
   keepWorkspace: boolean;
   json: boolean;
+  /**
+   * Also call the APIs and compare against the recorded contracts. Opt-in
+   * because it makes live requests with the developer's credentials, which is
+   * not something to start doing by surprise.
+   */
+  observe?: boolean;
 };
 
 export type RunItemResult = {
@@ -95,10 +102,38 @@ export async function runLoop(config: Config, options: RunOptions): Promise<RunR
     warn(`${integrationId}: no upstream source configured, so it cannot be checked`);
   }
 
+  // 2b. observe [deterministic]
+  //
+  // What the provider *says*, above, covers a bit over half of real breakages.
+  // What the provider *does* covers the rest -- including everything that is
+  // announced nowhere, which was 43% of the measured dataset. Drift arrives as
+  // ordinary change entries so the stages below need no special case.
+  const entries = [...check.entries];
+  if (options.observe) {
+    const observed = await observe({
+      config,
+      manifest: scanned.manifest,
+      check: true,
+    });
+    const drifted = driftToChangeEntries(observed);
+    const breaking = observed.findings.filter((finding) => finding.severity === "breaking").length;
+    stage(
+      "observe",
+      `${breaking} breaking drift(s) across ${observed.findings.length} change(s) in live responses`,
+    );
+    for (const skipped of observed.skipped) {
+      debug(`${skipped.endpoint}: ${skipped.reason}`);
+    }
+    entries.push(...drifted);
+    if (drifted.length) {
+      writeJson(paths.changes, { generatedAt: new Date().toISOString(), entries });
+    }
+  }
+
   const base: RunResult = {
     integrations: scanned.manifest.integrations.length,
     callSites: countCallSites(scanned.manifest),
-    newChanges: check.entries.length,
+    newChanges: entries.length,
     filteredOut: 0,
     relevant: 0,
     results: [],
@@ -106,8 +141,12 @@ export async function runLoop(config: Config, options: RunOptions): Promise<RunR
     exitCode: EXIT_OK,
   };
 
-  if (check.entries.length === 0) {
-    info("nothing new upstream, nothing to do");
+  if (entries.length === 0) {
+    info(
+      options.observe
+        ? "nothing new upstream and no drift in live responses, nothing to do"
+        : "nothing new upstream, nothing to do",
+    );
     return base;
   }
 
@@ -119,7 +158,7 @@ export async function runLoop(config: Config, options: RunOptions): Promise<RunR
     warn("no model configured: reporting the deterministic evidence only");
   }
 
-  const impact = await analyzeImpact(config, scanned.manifest, check.entries, {
+  const impact = await analyzeImpact(config, scanned.manifest, entries, {
     noLlm: options.noLlm,
     provider,
   });
@@ -142,7 +181,7 @@ export async function runLoop(config: Config, options: RunOptions): Promise<RunR
     renderMarkdownReport({
       items: impact.items,
       unmatched: impact.unmatched,
-      entries: check.entries,
+      entries: entries,
       analyzer: impact.analyzer,
       generatedAt,
       egress: provider?.summary(),
@@ -211,7 +250,7 @@ export async function runLoop(config: Config, options: RunOptions): Promise<RunR
       provider,
       items,
       candidates: impact.candidates,
-      entries: check.entries,
+      entries: entries,
       keepWorkspace: options.keepWorkspace,
     });
     outcomes.push(outcome);
@@ -221,7 +260,7 @@ export async function runLoop(config: Config, options: RunOptions): Promise<RunR
       const pr = await openPullRequest({
         config,
         outcome,
-        entries: check.entries,
+        entries: entries,
         reportFile: base.reportFile,
       });
       prUrl = pr.url;

@@ -153,7 +153,7 @@ Exit codes: `0` nothing to do · `1` error · `2` a human needs to look at this
 | `acb sources suggest` | find where a provider publishes its changes (`--write` to save) |
 | `acb contract` | check your calls against the provider's spec — useful in CI on its own |
 | `acb observe` | record what the APIs actually return; `--check` reports what drifted |
-| `acb run` | the whole loop (`--pr`, `--no-llm`, `--no-migrate`, `--offline`, `--json`) |
+| `acb run` | the whole loop (`--pr`, `--observe`, `--no-llm`, `--no-migrate`, `--offline`, `--json`) |
 | `acb config` | print the effective configuration |
 
 ### Watching what the API actually does
