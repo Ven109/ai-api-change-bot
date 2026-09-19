@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "API breakage case",
+  "description": "One real API change that broke real code, recorded so a second person can re-derive every claim from the cited sources.",
+  "type": "object",
+  "required": ["id", "api_host", "change", "effective_at", "signals", "confidence"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$",
+      "description": "Stable slug, e.g. openweather-onecall-2.5-retired."
+    },
+    "api_host": {
+      "type": "string",
+      "description": "The hostname a repository's code would call. This is the join key against a manifest."
+    },
+    "change": {
+      "type": "object",
+      "required": ["kind", "summary"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "operation_removed",
+            "operation_deprecated",
+            "param_renamed",
+            "param_removed",
+            "param_required",
+            "field_removed",
+            "field_renamed",
+            "field_type_changed",
+            "auth_changed",
+            "rate_limit_changed",
+            "version_retired"
+          ]
+        },
+        "summary": { "type": "string" },
+        "method": { "type": "string" },
+        "path_template": { "type": "string" },
+        "param": { "type": "string" },
+        "field": { "type": "string" },
+        "replacement": {
+          "type": "string",
+          "description": "What callers were supposed to move to, if the provider said."
+        }
+      }
+    },
+    "announced_at": {
+      "type": ["string", "null"],
+      "description": "ISO date of the EARLIEST public statement anywhere. null means nothing was found — which is the most interesting value in the dataset."
+    },
+    "effective_at": {
+      "type": "string",
+      "description": "ISO date it actually started failing. Lead time is measured from here."
+    },
+    "signals": {
+      "type": "object",
+      "description": "What each signal would have seen. Absent means not investigated; present-but-false means investigated and found nothing.",
+      "additionalProperties": false,
+      "properties": {
+        "spec": { "$ref": "#/$defs/signal" },
+        "changelog": { "$ref": "#/$defs/signal" },
+        "headers": { "$ref": "#/$defs/signal" },
+        "sdk": { "$ref": "#/$defs/signal" },
+        "contract": { "$ref": "#/$defs/signal" }
+      }
+    },
+    "evidence_of_pain": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Developers reporting the breakage. Without this, the case may be a change nobody depended on."
+    },
+    "confidence": {
+      "enum": ["verified", "partial", "unverified"],
+      "description": "verified: every date backed by a fetched source. partial: some dates unverified. unverified: do not score this case."
+    },
+    "notes": { "type": "string" }
+  },
+  "$defs": {
+    "signal": {
+      "type": "object",
+      "required": ["available"],
+      "additionalProperties": false,
+      "properties": {
+        "available": {
+          "type": "boolean",
+          "description": "Would this signal have existed to watch at the time?"
+        },
+        "detected_at": {
+          "type": ["string", "null"],
+          "description": "ISO date this signal first made the change knowable. Lead time = effective_at - detected_at."
+        },
+        "source_url": { "type": "string" },
+        "note": {
+          "type": "string",
+          "description": "Especially: why a signal that existed still would not have caught it."
+        }
+      }
+    }
+  }
+}
