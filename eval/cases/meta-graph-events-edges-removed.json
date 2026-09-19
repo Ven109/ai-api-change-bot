@@ -1,0 +1,35 @@
+{
+  "id": "meta-graph-events-edges-removed",
+  "api_host": "graph.facebook.com",
+  "change": {
+    "kind": "operation_removed",
+    "summary": "GET /{event-id} stopped returning twelve edges (attending, comments, declined, feed, interested, live_videos, maybe, noreply, photos, pictures, posts, videos), and every app — including already-approved ones — was required to pass App Review to regain access. Filed by Meta as a non-versioned change, defined on their own page as taking effect immediately across all API versions, so pinning v2.5 through v2.12 gave no protection.",
+    "method": "GET",
+    "path_template": "/{event-id}/feed"
+  },
+  "announced_at": "2018-04-04",
+  "effective_at": "2018-04-04",
+  "signals": {
+    "spec": {
+      "available": false,
+      "note": "Meta has never published an OpenAPI document for the general Graph API. The only Meta-owned Swagger artifact found was facebookarchive/Facebook-Server-Side-API-Swagger, created 2020-02-11 — 22 months later, now archived, and scoped to the Conversions advertiser API rather than the Event node."
+    },
+    "changelog": {
+      "available": true,
+      "detected_at": "2018-04-04",
+      "source_url": "https://developers.facebook.com/docs/graph-api/changelog/non-versioned-changes/apr-4-2018",
+      "note": "Announced and enforced the same day, so the changelog was a notification of an outage rather than a warning. This is the case that shows announced_at alone is not the metric: detection was perfect and the lead time was zero."
+    },
+    "headers": { "available": false },
+    "contract": {
+      "available": true,
+      "detected_at": "2018-04-04",
+      "note": "Silent in the HTTP sense — the edges returned empty arrays rather than 4xx, so it read as 'this event has no posts' and was hard to attribute. An error-rate monitor sees nothing; a monitor recording that an edge that always returned items now returns none catches it."
+    }
+  },
+  "evidence_of_pain": [
+    "https://github.com/tobilg/facebook-events-by-location/issues/45"
+  ],
+  "confidence": "verified",
+  "notes": "Widely misattributed to Graph API v3.0, which shipped a month later on 2018-05-01; it was a non-versioned change. Meta paused App Review at the same time, so the documented remediation was unavailable for weeks — the maintainer's thread runs April to July with users stranded. No amount of monitoring helps here: with zero notice, the best any tool can do is tell you the same day, which is what contract verification would have done."
+}

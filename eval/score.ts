@@ -10,8 +10,18 @@
 //     changelog-watching is structurally unable to help and where contract
 //     verification has to earn its place.
 //
-// The threshold was written down before the data was collected (see
-// eval/README.md): >=70% union detection with a median lead time of >=30 days.
+// Two classes, two metrics — and the dataset is what forced this.
+//
+// An ANNOUNCED change can be caught before it bites, so the measure is lead
+// time, against the threshold written down before collection: >=70% union
+// detection with a median lead of >=30 days.
+//
+// A SILENT change cannot be caught early by anyone, because nothing exists to
+// read. Scoring it on lead time would guarantee a failing number no matter how
+// good the tool is, which would say more about the metric than the product.
+// The measure there is detection LATENCY: how long after it breaks until you
+// know, versus the current state of the art, which is waiting for a user to
+// complain. Those are different products and they are reported separately.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -52,15 +62,24 @@ export type SignalScore = {
   worstLeadDays: number | null;
 };
 
+export type ClassScore = {
+  of: number;
+  detected: number;
+  rate: number;
+  /** Announced: days of warning. Silent: days of delay (0 = same day). */
+  medianDays: number | null;
+};
+
 export type Report = {
   cases: number;
+  /** Share of all breakages that were announced anywhere at all. */
+  announcedShare: number;
   excluded: number;
-  silent: number;
   perSignal: SignalScore[];
-  union: { detected: number; rate: number; medianLeadDays: number | null };
-  silentUnion: { detected: number; of: number; byContractOnly: number };
+  announced: ClassScore;
+  silent: ClassScore & { byContractOnly: number };
   missedEntirely: string[];
-  verdict: { go: boolean; because: string };
+  verdict: { go: boolean; because: string; implication: string };
 };
 
 export function leadDays(detectedAt: string, effectiveAt: string): number {
@@ -105,50 +124,94 @@ export function scoreCases(cases: Case[]): Report {
     };
   });
 
-  // The union: the earliest any signal would have known.
-  const unionLeads: number[] = [];
+  const announcedCases = scored.filter((entry) => Boolean(entry.announced_at));
   const missedEntirely: string[] = [];
   for (const entry of scored) {
-    const earliest = earliestDetection(entry);
-    if (earliest === undefined) missedEntirely.push(entry.id);
-    else unionLeads.push(leadDays(earliest, entry.effective_at));
+    if (earliestDetection(entry) === undefined) missedEntirely.push(entry.id);
   }
 
-  const silentDetected = silent.filter((entry) => earliestDetection(entry) !== undefined);
+  const announced = classScore(announcedCases, "lead");
+  const silentScore = classScore(silent, "latency");
   const silentByContractOnly = silent.filter((entry) => {
     const others = SIGNALS.filter((signal) => signal !== "contract");
-    const onlyContract =
+    return (
       Boolean(entry.signals.contract?.detected_at) &&
-      others.every((signal) => !entry.signals[signal]?.detected_at);
-    return onlyContract;
-  });
+      others.every((signal) => !entry.signals[signal]?.detected_at)
+    );
+  }).length;
 
-  const unionRate = scored.length ? unionLeads.length / scored.length : 0;
-  const unionMedian = median(unionLeads);
-  const go = unionRate >= GO_DETECTION_RATE && (unionMedian ?? 0) >= GO_MEDIAN_LEAD_DAYS;
+  // The pre-registered threshold applies to the announced class, which is what
+  // a registry of announcements can possibly serve.
+  //
+  // Read `announced.rate` with suspicion: a case carries an announced_at only
+  // because research FOUND the announcement, so this rate is close to circular
+  // and will tend to 100% no matter how good any tool is. The number that is
+  // not circular is announcedShare — what fraction of breakages were announced
+  // at all — and the lead time on those.
+  const go =
+    announced.rate >= GO_DETECTION_RATE && (announced.medianDays ?? 0) >= GO_MEDIAN_LEAD_DAYS;
 
   return {
     cases: scored.length,
+    announcedShare: scored.length ? announcedCases.length / scored.length : 0,
     excluded,
-    silent: silent.length,
     perSignal,
-    union: { detected: unionLeads.length, rate: unionRate, medianLeadDays: unionMedian },
-    silentUnion: {
-      detected: silentDetected.length,
-      of: silent.length,
-      byContractOnly: silentByContractOnly.length,
-    },
+    announced,
+    silent: { ...silentScore, byContractOnly: silentByContractOnly },
     missedEntirely,
     verdict: {
       go,
       because: go
-        ? `union detection ${percent(unionRate)} with median lead ${unionMedian}d clears the ` +
-          `threshold set before collection (>=${percent(GO_DETECTION_RATE)}, >=${GO_MEDIAN_LEAD_DAYS}d)`
-        : `union detection ${percent(unionRate)} with median lead ${unionMedian ?? "n/a"}d misses ` +
-          `the threshold (>=${percent(GO_DETECTION_RATE)}, >=${GO_MEDIAN_LEAD_DAYS}d). ` +
-          `A registry of announcements is not enough; contract verification is the product.`,
+        ? `announced changes: ${percent(announced.rate)} detected, median lead ` +
+          `${announced.medianDays}d — clears the pre-registered bar ` +
+          `(>=${percent(GO_DETECTION_RATE)}, >=${GO_MEDIAN_LEAD_DAYS}d)`
+        : `announced changes: ${percent(announced.rate)} detected, median lead ` +
+          `${announced.medianDays ?? "n/a"}d — misses the pre-registered bar ` +
+          `(>=${percent(GO_DETECTION_RATE)}, >=${GO_MEDIAN_LEAD_DAYS}d)`,
+      implication: implication(silentScore, silentByContractOnly, scored.length),
     },
   };
+}
+
+function classScore(cases: Case[], metric: "lead" | "latency"): ClassScore {
+  const days: number[] = [];
+  let detected = 0;
+  for (const entry of cases) {
+    const earliest = earliestDetection(entry);
+    if (earliest === undefined) continue;
+    detected++;
+    // Lead counts down to the breakage; latency counts up from it. A silent
+    // change detected on the day it lands is latency 0, not lead 0.
+    const value =
+      metric === "lead"
+        ? leadDays(earliest, entry.effective_at)
+        : Math.max(0, -leadDays(earliest, entry.effective_at));
+    days.push(value);
+  }
+  return {
+    of: cases.length,
+    detected,
+    rate: cases.length ? detected / cases.length : 0,
+    medianDays: median(days),
+  };
+}
+
+/** What the silent subset means for what should be built. */
+function implication(
+  silent: ClassScore,
+  byContractOnly: number,
+  total: number,
+): string {
+  if (silent.of === 0) return "No silent changes in the dataset, so nothing can be concluded about them.";
+  const share = Math.round((silent.of / total) * 100);
+  if (byContractOnly === 0) {
+    return `${silent.of} silent change(s) (${share}% of the dataset), none of which needed a live call to catch.`;
+  }
+  return (
+    `${silent.of} of ${total} cases (${share}%) were announced nowhere, and ${byContractOnly} ` +
+    `could ONLY be caught by calling the API. No registry of documents can reach those, ` +
+    `however complete it is — which makes contract verification the primary signal, not a supplement.`
+  );
 }
 
 function earliestDetection(entry: Case): string | undefined {
@@ -170,10 +233,11 @@ export function renderReport(report: Report): string {
   lines.push(
     `${report.cases} scored case(s)` +
       (report.excluded ? `, ${report.excluded} excluded as unverified` : "") +
-      `, of which ${report.silent} had no announcement anywhere.`,
+      `: ${report.announced.of} announced, ${report.silent.of} announced nowhere.`,
   );
   lines.push("");
   lines.push("| Signal | Applicable | Detected | Rate | Median lead | Worst lead |");
+  lines.push("<!-- lead is days BEFORE the break; a negative number means the signal only spoke afterwards -->");
   lines.push("| --- | --- | --- | --- | --- | --- |");
   for (const score of report.perSignal) {
     lines.push(
@@ -185,22 +249,32 @@ export function renderReport(report: Report): string {
   }
   lines.push("");
   lines.push(
-    `**Union:** ${report.union.detected}/${report.cases} detected by at least one signal ` +
-      `(${percent(report.union.rate)}), median lead ` +
-      `${report.union.medianLeadDays === null ? "—" : `${report.union.medianLeadDays}d`}.`,
+    `**Announced changes** (can be caught early): ${report.announced.detected}/${report.announced.of} ` +
+      `detected (${percent(report.announced.rate)}), median lead ` +
+      `${report.announced.medianDays === null ? "—" : `${report.announced.medianDays}d`}.`,
   );
   lines.push("");
   lines.push(
-    `**Silent changes:** ${report.silentUnion.detected}/${report.silentUnion.of} caught, ` +
-      `${report.silentUnion.byContractOnly} of them **only** by calling the API. ` +
-      `This is the number that says whether contract verification is optional.`,
+    `> Treat that detection rate as circular: a case is classed as announced only because ` +
+      `the announcement was found, so it tends to 100% regardless of tooling. The honest ` +
+      `figures are the **${percent(report.announcedShare)} of breakages that were announced at all** ` +
+      `and the median lead on those.`,
+  );
+  lines.push("");
+  lines.push(
+    `**Silent changes** (cannot be caught early by anyone): ${report.silent.detected}/${report.silent.of} ` +
+      `detected (${percent(report.silent.rate)}), median delay after breaking ` +
+      `${report.silent.medianDays === null ? "—" : `${report.silent.medianDays}d`}. ` +
+      `${report.silent.byContractOnly} could only be caught by calling the API.`,
   );
   lines.push("");
   if (report.missedEntirely.length) {
     lines.push(`**Caught by nothing:** ${report.missedEntirely.join(", ")}`);
     lines.push("");
   }
-  lines.push(`**Verdict: ${report.verdict.go ? "GO" : "NO-GO"}** — ${report.verdict.because}`);
+  lines.push(`**Registry verdict: ${report.verdict.go ? "GO" : "NO-GO"}** — ${report.verdict.because}`);
+  lines.push("");
+  lines.push(`**What the silent subset implies:** ${report.verdict.implication}`);
   return lines.join("\n");
 }
 

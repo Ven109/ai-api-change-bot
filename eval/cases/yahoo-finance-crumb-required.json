@@ -1,0 +1,33 @@
+{
+  "id": "yahoo-finance-crumb-required",
+  "api_host": "query1.finance.yahoo.com",
+  "change": {
+    "kind": "auth_changed",
+    "summary": "Endpoints open for years began requiring a session cookie plus a crumb token, returning 401 with {\"finance\":{\"result\":null,\"error\":{\"code\":\"Unauthorized\",\"description\":\"Invalid Crumb\"}}}. Rolled out gradually: intermittent first, then total.",
+    "method": "GET",
+    "path_template": "/v7/finance/quote"
+  },
+  "announced_at": null,
+  "effective_at": "2023-04-19",
+  "signals": {
+    "spec": { "available": false },
+    "changelog": {
+      "available": false,
+      "note": "Yahoo decommissioned its official Finance API in 2017. These are undocumented internal endpoints reverse-engineered from the website: there is no portal, reference or changelog in existence to watch. Silent by construction, which makes this weaker evidence than a silent change on a documented API."
+    },
+    "headers": { "available": false },
+    "contract": {
+      "available": true,
+      "detected_at": "2023-04-19",
+      "note": "200 to 401 with a new error envelope. The wrinkle worth designing for: the rollout was intermittent for a day, so a single daily probe could have come back healthy by luck. A useful detector samples repeatedly and treats a rising error rate as the signal rather than a binary flip."
+    }
+  },
+  "evidence_of_pain": [
+    "https://github.com/joshuaulrich/quantmod/issues/382",
+    "https://github.com/iprak/yahoofinance/issues/93",
+    "https://github.com/sstrickx/yahoofinance-api/issues/206",
+    "https://github.com/ranaroussi/yfinance/issues/1592"
+  ],
+  "confidence": "verified",
+  "notes": "Four independent language ecosystems (R, Python, Java, Home Assistant) filed breakage reports in the same week. The crumb scheme was changed again in April 2024, so this is a recurring pattern rather than a one-off."
+}

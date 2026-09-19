@@ -1,0 +1,39 @@
+{
+  "id": "twitter-v11-retirement",
+  "api_host": "api.twitter.com",
+  "change": {
+    "kind": "auth_changed",
+    "summary": "Free and legacy access to the v1.1 REST API was removed, forcing migration to v2. Non-exempt /1.1/ calls return HTTP 403 with application error code 453 in the body. A few v1.1 endpoints survived on the free tier (media upload, OAuth). Confirmed broken: GET /1.1/statuses/user_timeline.json, GET /1.1/search/tweets.json, POST /1.1/statuses/filter.json, /1.X/users/search/, /1.X/geo/search/, and the /1.1/statuses/* write endpoints.",
+    "method": "GET",
+    "path_template": "/1.1/statuses/user_timeline.json"
+  },
+  "announced_at": "2023-02-02",
+  "effective_at": "2023-07-14",
+  "signals": {
+    "spec": {
+      "available": false,
+      "note": "A machine-readable contract existed only for the API developers were forced ONTO. api.twitter.com/2/openapi.json was live throughout — the 2023-05-07 capture has 67 paths, every one under /2/ and none containing 1.1. Even the v1 tools page offered only the v2 spec. There was never a diffable spec for the API being killed."
+    },
+    "changelog": {
+      "available": true,
+      "detected_at": "2023-02-02",
+      "source_url": "https://web.archive.org/web/20240109072929/https://twitter.com/TwitterDev/status/1621026986784337922",
+      "note": "Detected, but the announcement was close to useless as a date source. It promised February 9; February 8 slipped it to February 13; February 13 said 'a few more days' with no date. Nothing was switched off on any of them and the real plan landed 46 days later. A monitor keyed on announced dates fires three false alarms. The official changelog at docs.x.com carries only ONE entry for this entire migration and omits the February free-access removal completely."
+    },
+    "headers": { "available": false },
+    "contract": {
+      "available": true,
+      "detected_at": "2023-06-03",
+      "source_url": "https://github.com/everydaycodings/Twitter-Sentimental-Analysis-WebApp/issues/7",
+      "note": "In-band signalling: the 453 body is self-describing and names the cause. Developers were pasting it into GitHub issues from 2023-06-03, about six weeks before Twitter published an explainer for it on 2023-07-19, and 453 never appeared in the official error reference at all."
+    }
+  },
+  "evidence_of_pain": [
+    "https://github.com/hugoclrd/tweets-cleaner/issues/12",
+    "https://github.com/tweepy/tweepy/issues/2144",
+    "https://github.com/ropensci-archive/rtweet/issues/777",
+    "https://stackoverflow.com/questions/77634621/twitter-api-v1-1-error-limited-access-453"
+  ],
+  "confidence": "partial",
+  "notes": "There is no single effective_at — this rolled out in at least six waves from 2023-03-15 to 2023-11-20. 2023-07-14 is when user_timeline began 453ing for ordinary users, which is the wave the recorded call site belongs to; the dataset schema forcing one date is itself a finding. A widespread claim that this returns 'HTTP 453' is wrong: the status is 403 and 453 is an application code in the body, which matters because a monitor matching on status codes alone cannot distinguish it from an ordinary permission error. Docs lagged enforcement — one reporter notes 'according to the documentation this API should still work'. Every hostname in the announcement trail was later rebranded (twittercommunity.com to devcommunity.x.com, developer.twitter.com to developer.x.com, the twitterdev GitHub org to xdevplatform), which is a standing hazard for any crawler keyed on host."
+}

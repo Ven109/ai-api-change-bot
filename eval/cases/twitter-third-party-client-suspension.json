@@ -1,0 +1,32 @@
+{
+  "id": "twitter-third-party-client-suspension",
+  "api_host": "api.twitter.com",
+  "change": {
+    "kind": "auth_changed",
+    "summary": "Twitter deliberately suspended the OAuth consumer keys of full-featured third-party clients. Affected apps showed 'Suspended' in the developer portal and every request failed, including authentication. It was per-credential, not platform-wide: a freshly created demo client worked fine."
+  },
+  "announced_at": null,
+  "effective_at": "2023-01-12",
+  "signals": {
+    "spec": { "available": false },
+    "changelog": {
+      "available": true,
+      "detected_at": null,
+      "source_url": "https://twitter.com/TwitterDev/status/1615405842735714304",
+      "note": "The first acknowledgement came five days later and claimed enforcement of 'long-standing API rules' — rules whose text only appeared in the Developer Agreement about a week after the suspensions began. No notice was possible from any document."
+    },
+    "headers": { "available": false },
+    "contract": {
+      "available": true,
+      "detected_at": "2023-01-12",
+      "note": "Detectable immediately, but only with the right credentials: the change was scoped to specific client_ids, not to endpoints. A prober using a different app key — or the unauthenticated surface — would have seen healthy responses throughout. Probe with the credential whose behaviour you actually care about."
+    }
+  },
+  "evidence_of_pain": [
+    "https://techcrunch.com/2023/01/12/third-party-twitter-apps-tweetbot-twitterrific-echofon-down/",
+    "https://techcrunch.com/2023/01/16/twitters-third-party-client-issue-is-seemingly-a-deliberate-suspension/",
+    "https://www.macrumors.com/2023/01/20/twitter-bans-third-party-apps/"
+  ],
+  "confidence": "partial",
+  "notes": "The exact HTTP status returned is unverified — no contemporary source states it — and devcommunity.x.com blocks automated fetches, so 'no developer-forum post exists' is unverified rather than disproven. Included because the credential-scoped shape is a real design constraint for any prober, not because every detail is nailed down."
+}

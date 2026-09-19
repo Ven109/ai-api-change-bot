@@ -1,0 +1,39 @@
+{
+  "id": "zoom-guest-emails-blanked",
+  "api_host": "api.zoom.us",
+  "change": {
+    "kind": "field_value_changed",
+    "summary": "Zoom stopped returning email VALUES for participants flagged as guests across roughly 30 REST endpoints and 9 webhook events. The fields email, participant_email and user_email still exist and still return 200 — they return an empty string instead of an address. Confirmed from a developer's own response body: GET /v2/report/meetings/{meetingId}/participants now yields \"user_email\": \"\".",
+    "method": "GET",
+    "path_template": "/v2/report/meetings/{meetingId}/participants"
+  },
+  "announced_at": "2022-01-26",
+  "effective_at": "2022-03-01",
+  "signals": {
+    "spec": {
+      "available": true,
+      "detected_at": null,
+      "note": "This is the case that breaks schema monitoring. Zoom published a Swagger 2.0 spec and it could not possibly have shown this change: same status codes, same field names, same JSON shape, same types. Only the values went empty. A spec diff is structurally blind to it. Scored as a miss for the spec signal, which is exactly right."
+    },
+    "changelog": {
+      "available": true,
+      "detected_at": "2022-01-26",
+      "source_url": "https://developers.zoom.us/changelog/platform/zoom-api-email-address-display-rules/",
+      "note": "34 days of notice — but it never reached the developer forum's Announcements category, verified by enumerating every topic created there from 2021-11 to 2022-03 (all 22 are SDK release notes). Developers subscribed to the channel Zoom told them to subscribe to got nothing."
+    },
+    "headers": { "available": false },
+    "contract": {
+      "available": true,
+      "detected_at": "2022-03-01",
+      "note": "Detectable only by asserting on VALUES, not shape or status. A probe would have to record that user_email was a non-empty string and is now empty. Account-gated: it needs a real meeting with a real external participant, so the fixture has to be constructed, not merely fetched."
+    }
+  },
+  "evidence_of_pain": [
+    "https://devforum.zoom.us/t/zoom-participant-api-not-returning-participant-emails/65028",
+    "https://devforum.zoom.us/t/user-email-field-in-past-meeting-participants-api-is-blank-suddenly/65058",
+    "https://devforum.zoom.us/t/email-is-empty-string-for-meeting-participant-left-and-meeting-participant-joined-events/79408",
+    "https://community.panopto.com/discussion/1520/impact-of-zoom-api-update-on-2022-03-01"
+  ],
+  "confidence": "verified",
+  "notes": "announced_at is Zoom's self-reported publication date on a page that has since been migrated; the original announcements page was client-rendered so its archive snapshots carry no article text to check it against. effective_at is independently corroborated — the first developer report was filed 2022-03-01T09:30:15Z, the same day, and Zoom staff first replied 16 days later. Zoom repeated the pattern on 2023-03-03 by hiding participant IDs, which broke the correlate-by-ID workaround people adopted after this one. The entire announcement trail is now dead on the live web and survives only in Wayback."
+}

@@ -63,7 +63,7 @@ test("a signal that did not exist is not counted against it", () => {
   assert.equal(changelog.medianLeadDays, 151);
 });
 
-test("the union takes the earliest signal, not the best-known one", () => {
+test("the earliest signal wins, not the best-known one", () => {
   const report = scoreCases([
     testCase({
       id: "a",
@@ -76,9 +76,9 @@ test("the union takes the earliest signal, not the best-known one", () => {
     }),
   ]);
 
-  assert.equal(report.union.detected, 1);
+  assert.equal(report.announced.detected, 1);
   // 2026-01-15 → 2026-06-01, the earliest of the three.
-  assert.equal(report.union.medianLeadDays, 137);
+  assert.equal(report.announced.medianDays, 137);
 });
 
 test("unverified cases are excluded rather than allowed to flatter the number", () => {
@@ -89,7 +89,7 @@ test("unverified cases are excluded rather than allowed to flatter the number", 
 
   assert.equal(report.cases, 1);
   assert.equal(report.excluded, 1);
-  assert.equal(report.union.rate, 1, "the excluded case neither helps nor hurts");
+  assert.equal(report.announced.rate, 1, "the excluded case neither helps nor hurts");
 });
 
 test("silent changes are tracked separately, and so is contract-only detection", () => {
@@ -114,11 +114,11 @@ test("silent changes are tracked separately, and so is contract-only detection",
     }),
   ]);
 
-  assert.equal(report.silent, 2);
-  assert.equal(report.silentUnion.of, 2);
-  assert.equal(report.silentUnion.detected, 1);
+  assert.equal(report.silent.of, 2);
+  assert.equal(report.announced.of, 1);
+  assert.equal(report.silent.detected, 1);
   assert.equal(
-    report.silentUnion.byContractOnly,
+    report.silent.byContractOnly,
     1,
     "the case only calling the API could have caught",
   );
@@ -144,13 +144,13 @@ test("the go/no-go threshold is applied as written, not negotiated", () => {
       signals: { changelog: { available: true, detected_at: "2026-05-28" } },
     }),
   ]);
-  assert.equal(lateButComplete.union.rate, 1);
+  assert.equal(lateButComplete.announced.rate, 1);
   assert.equal(
     lateButComplete.verdict.go,
     false,
     "100% detection two days out is not a product",
   );
-  assert.match(lateButComplete.verdict.because, /contract verification is the product/);
+  assert.match(lateButComplete.verdict.because, /misses the pre-registered bar/);
 
   // Early warning, but only half the cases.
   const earlyButPartial = scoreCases([
@@ -165,8 +165,63 @@ test("the go/no-go threshold is applied as written, not negotiated", () => {
     testCase({ id: "c", signals: { spec: { available: true, detected_at: "2026-03-01" } } }),
     testCase({ id: "d", signals: { spec: { available: true, detected_at: null } } }),
   ]);
-  assert.equal(clears.union.rate, 0.75);
+  assert.equal(clears.announced.rate, 0.75);
   assert.equal(clears.verdict.go, true);
+});
+
+test("a silent change is scored on how late it was caught, not on lead time", () => {
+  // The dataset forced this split. A change nobody announced cannot be caught
+  // early by any tool, so scoring it on lead time measures the metric, not the
+  // product. Detection the day after it breaks is 1 day late, not -1 lead.
+  const report = scoreCases([
+    testCase({
+      id: "silent",
+      announced_at: null,
+      effective_at: "2026-06-01",
+      signals: { contract: { available: true, detected_at: "2026-06-03" } },
+    }),
+  ]);
+
+  assert.equal(report.silent.detected, 1);
+  assert.equal(report.silent.medianDays, 2, "two days late, not minus two days early");
+  assert.equal(report.announced.of, 0);
+  assert.equal(
+    report.verdict.go,
+    false,
+    "an all-silent dataset cannot clear a bar about advance warning",
+  );
+  assert.match(report.verdict.implication, /ONLY be caught by calling the API/);
+});
+
+test("the pre-registered bar still binds the class it was written for", () => {
+  // Splitting the metric must not become a way to pass by redefinition: an
+  // announced change detected late still fails, exactly as it did before.
+  const report = scoreCases([
+    testCase({
+      id: "announced-but-late",
+      announced_at: "2026-01-01",
+      effective_at: "2026-06-01",
+      signals: { changelog: { available: true, detected_at: "2026-05-30" } },
+    }),
+  ]);
+
+  assert.equal(report.announced.rate, 1);
+  assert.equal(report.announced.medianDays, 2);
+  assert.equal(report.verdict.go, false);
+});
+
+test("the announced detection rate is reported as circular, not as a win", () => {
+  // Cases are classed as announced BECAUSE an announcement was found, so that
+  // rate is near-tautological. The report has to say so itself, or the headline
+  // number quietly flatters whatever tool is being judged.
+  const report = scoreCases([
+    testCase({ id: "a", announced_at: "2026-01-01", signals: { changelog: { available: true, detected_at: "2026-01-01" } } }),
+    testCase({ id: "b", announced_at: null, signals: { contract: { available: true, detected_at: "2026-06-01" } } }),
+  ]);
+
+  assert.equal(report.announced.rate, 1);
+  assert.equal(report.announcedShare, 0.5, "the non-circular number: half were announced at all");
+  assert.match(renderReport(report), /circular/);
 });
 
 test("the report states the verdict and the uncomfortable numbers", () => {
@@ -184,7 +239,7 @@ test("the report states the verdict and the uncomfortable numbers", () => {
   );
 
   assert.match(markdown, /\| changelog \| 1 \| 0 \| 0% \|/);
-  assert.match(markdown, /Silent changes:/);
-  assert.match(markdown, /only\*\* by calling the API/);
-  assert.match(markdown, /Verdict: NO-GO/);
+  assert.match(markdown, /Silent changes\*\*/);
+  assert.match(markdown, /could only be caught by calling the API/);
+  assert.match(markdown, /Registry verdict: NO-GO/);
 });

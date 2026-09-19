@@ -1,0 +1,43 @@
+{
+  "id": "twilio-preview-sync-eol",
+  "api_host": "preview.twilio.com",
+  "change": {
+    "kind": "operation_removed",
+    "summary": "The entire Sync REST surface on preview.twilio.com was retired — 18 path templates, all methods. Twilio's wording: 'any requests sent to this endpoint will result in a 400 error.' Migration is a host swap: the same paths exist on sync.twilio.com/v1.",
+    "method": "GET",
+    "path_template": "/Sync/Services/{ServiceSid}/Documents/{Sid}"
+  },
+  "announced_at": "2025-01-09",
+  "effective_at": "2025-03-10",
+  "signals": {
+    "spec": {
+      "available": true,
+      "detected_at": "2025-03-20",
+      "source_url": "https://github.com/twilio/twilio-oai/commit/b55425eccb0707d50cccda5b83a77eca02dd9c44",
+      "note": "Ten days LATE. The spec was regenerated after the shutoff, so for ten days Twilio's published OpenAPI advertised endpoints that were already returning 400. Verified by cloning the repo: the diff has exactly 18 removed /Sync/ path lines and zero added. A spec-watcher would have been told after its users were already broken."
+    },
+    "changelog": {
+      "available": true,
+      "detected_at": "2025-01-09",
+      "source_url": "https://www.twilio.com/en-us/changelog/preview-twilio-com-sync-api-endpoint-will-end-of-life-on-march-1",
+      "note": "60 days of notice, the cleanest announcement in the dataset. But note the SDK changelogs lie by omission: CHANGES.md in the very commit that deleted 18 paths does not mention Sync at all, listing only unrelated Flex and Messaging entries."
+    },
+    "headers": { "available": false },
+    "sdk": {
+      "available": true,
+      "detected_at": "2024-10-23",
+      "source_url": "https://github.com/twilio/twilio-node/pull/1041",
+      "note": "The earliest public signal of any kind: 'chore: remove preview sync api', two and a half months before the changelog post. Not an announcement — an artifact. It is also unreliable on its own, because autogeneration re-added the code twice afterwards before the final deletion."
+    },
+    "contract": {
+      "available": true,
+      "detected_at": "2025-03-10",
+      "note": "The only case in the dataset that fails loudly, with a 400. Recorded as detected on the stated EOL date, though no post-shutoff source was found proving the endpoint actually started returning 400 that day."
+    }
+  },
+  "evidence_of_pain": [
+    "https://github.com/twilio/twilio-python/pull/874"
+  ],
+  "confidence": "partial",
+  "notes": "effective_at is Twilio's stated date, not an observed one — no wire-level complaint about a 400 from preview.twilio.com/sync was found anywhere. The verified damage was collateral and much larger than the retirement itself: the codegen run deleted twilio/rest/preview/sync/ but left its import in preview/__init__.py, so `import twilio.rest` raised ModuleNotFoundError for EVERY twilio-python user across six releases (9.5.1 to 9.6.4, 2025-03-20 to 2025-07-10). An outside contributor found and fixed it in one line. Verified per tag by checking both the import line and the package's existence."
+}
