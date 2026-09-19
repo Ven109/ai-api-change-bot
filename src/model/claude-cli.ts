@@ -113,6 +113,11 @@ export class ClaudeCliProvider implements ModelProvider {
         resolve(stripNotices(stdout).trim());
       });
 
+      // A short-lived child can exit before the prompt finishes writing, and an
+      // unhandled EPIPE on stdin takes the whole process down. The exit
+      // handlers above already have everything needed to report the outcome,
+      // so a broken pipe here is not news.
+      child.stdin?.on("error", () => {});
       child.stdin?.end(prompt);
     });
   }
