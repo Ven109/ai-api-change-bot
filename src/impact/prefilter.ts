@@ -246,6 +246,57 @@ function stripCall(member: string): string {
 export type SymbolHit = { file: string; line: number; symbol: string };
 
 /**
+ * The shapes real code uses to read a response field.
+ *
+ * Measured rather than guessed: an earlier version matched only `x.field` and
+ * `x["field"]`, and missed destructuring, Python's `.get("field")` and every
+ * codebase that maps snake_case responses onto camelCase models -- four of ten
+ * common idioms. A miss here is worse than a loose match, because the drift is
+ * reported either way and the only difference is whether it carries a line
+ * number the developer can jump to.
+ */
+function readPattern(symbol: string): RegExp {
+  const names = new Set([symbol, ...caseVariants(symbol)]);
+  const alternatives = [...names].map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const any = `(?:${alternatives.join("|")})`;
+  return new RegExp(
+    [
+      `\\.${any}\\b`, // x.field, x?.field
+      `\\[\\s*["']${any}["']\\s*\\]`, // x["field"]
+      `\\.get\\(\\s*["']${any}["']`, // Python: x.get("field")
+      `[{,]\\s*${any}\\s*[,}:]`, // const { field } = x, and { field: alias }
+      `\\b${any}\\s*=[^=]`, // field=... in a call
+    ].join("|"),
+  );
+}
+
+/**
+ * `import { status } from "./local"` is shaped exactly like destructuring a
+ * response, so it matched once the destructuring pattern was added. Binding a
+ * name is not reading a field.
+ */
+function isImport(line: string): boolean {
+  return /^\s*(?:import\b|export\b.*\bfrom\b|from\s+[.\w]+\s+import\b)/.test(line);
+}
+
+/**
+ * snake_case <-> camelCase. APIs overwhelmingly return snake_case while the
+ * code reading them is often camelCase, so without this the join misses
+ * exactly the repositories that have a mapping layer -- which is to say the
+ * well-structured ones.
+ */
+function caseVariants(symbol: string): string[] {
+  const variants: string[] = [];
+  if (symbol.includes("_")) {
+    variants.push(symbol.replace(/_([a-z0-9])/g, (_m, c: string) => c.toUpperCase()));
+  }
+  if (/[a-z][A-Z]/.test(symbol)) {
+    variants.push(symbol.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase());
+  }
+  return variants.filter((variant) => variant !== symbol);
+}
+
+/**
  * Where a response field or symbol shows up in the repository's own code.
  * Deliberately narrow: only the files the manifest already knows about, and
  * only the shapes that actually read a field.
@@ -269,12 +320,9 @@ export function searchForSymbols(
     }
     const lines = text.split("\n");
     for (const symbol of interesting) {
-      const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      // `x.field`, `x["field"]`, `x['field']`, `field=` in a call.
-      const pattern = new RegExp(
-        `(?:\\.${escaped}\\b|\\[\\s*["']${escaped}["']\\s*\\]|\\b${escaped}\\s*=[^=])`,
-      );
+      const pattern = readPattern(symbol);
       lines.forEach((line, index) => {
+        if (isImport(line)) return;
         if (pattern.test(line)) hits.push({ file, line: index + 1, symbol });
       });
     }
