@@ -12,6 +12,13 @@ import { driftToChangeEntries, observe, renderObserve } from "../src/observe/ind
 import { plannedProbes, resolveAuth } from "../src/observe/probe.ts";
 import type { Manifest } from "../src/types.ts";
 
+/** Probing is opt-in, so tests must opt in explicitly like a real user does. */
+function observeConfig(root: string, spec: Record<string, unknown> = {}) {
+  const config = loadConfig(root);
+  config.observe = { "api.example.com": spec };
+  return config;
+}
+
 function tempRepo(files: Record<string, string> = {}): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "acb-observe-"));
   for (const [file, content] of Object.entries(files)) {
@@ -102,7 +109,7 @@ test("credentials come from the environment, and say so when missing", () => {
 
 test("recording writes a profile that holds no response values", async () => {
   const root = tempRepo();
-  const config = loadConfig(root);
+  const config = observeConfig(root);
   const manifest = manifestFor(root, [{ method: "GET", pathTemplate: "/v1/me" }]);
 
   const result = await observe({
@@ -127,7 +134,7 @@ test("recording writes a profile that holds no response values", async () => {
 
 test("a check against an unchanged API reports nothing", async () => {
   const root = tempRepo();
-  const config = loadConfig(root);
+  const config = observeConfig(root);
   const manifest = manifestFor(root, [{ method: "GET", pathTemplate: "/v1/me" }]);
   const body = { id: "usr_1", email: "a@b.com", plan: { name: "pro" } };
 
@@ -154,7 +161,7 @@ test("a drifted field that this repo reads demands action and names the line", a
       "}",
     ].join("\n"),
   });
-  const config = loadConfig(root);
+  const config = observeConfig(root);
   const manifest = manifestFor(root, [{ method: "GET", pathTemplate: "/v1/sub" }]);
   manifest.files = { "src/billing.ts": "hash" };
 
@@ -182,7 +189,7 @@ test("a drifted field that this repo reads demands action and names the line", a
 
 test("a drift in a field nothing reads does not gate the build", async () => {
   const root = tempRepo();
-  const config = loadConfig(root);
+  const config = observeConfig(root);
   const manifest = manifestFor(root, [{ method: "GET", pathTemplate: "/v1/sub" }]);
 
   await observe({
@@ -204,7 +211,7 @@ test("a drift in a field nothing reads does not gate the build", async () => {
 
 test("checking without a baseline explains itself instead of failing", async () => {
   const root = tempRepo();
-  const config = loadConfig(root);
+  const config = observeConfig(root);
   const manifest = manifestFor(root, [{ method: "GET", pathTemplate: "/v1/me" }]);
 
   const check = await observe({
@@ -220,7 +227,7 @@ test("checking without a baseline explains itself instead of failing", async () 
 
 test("--dry-run calls nothing at all", async () => {
   const root = tempRepo();
-  const config = loadConfig(root);
+  const config = observeConfig(root);
   const manifest = manifestFor(root, [{ method: "GET", pathTemplate: "/v1/me" }]);
 
   let called = false;
@@ -241,7 +248,7 @@ test("--dry-run calls nothing at all", async () => {
 
 test("a non-JSON response is reported, not silently profiled as empty", async () => {
   const root = tempRepo();
-  const config = loadConfig(root);
+  const config = observeConfig(root);
   const manifest = manifestFor(root, [{ method: "GET", pathTemplate: "/v1/me" }]);
 
   const result = await observe({
@@ -257,7 +264,7 @@ test("a non-JSON response is reported, not silently profiled as empty", async ()
 
 test("drift becomes an ordinary change entry, so the existing pipeline works", async () => {
   const root = tempRepo({ "src/billing.ts": "sub.current_period_end;\n" });
-  const config = loadConfig(root);
+  const config = observeConfig(root);
   const manifest = manifestFor(root, [{ method: "GET", pathTemplate: "/v1/sub" }]);
   manifest.files = { "src/billing.ts": "hash" };
 
@@ -290,7 +297,7 @@ test("drift becomes an ordinary change entry, so the existing pipeline works", a
 
 test("one entry per endpoint, not one per field", async () => {
   const root = tempRepo();
-  const config = loadConfig(root);
+  const config = observeConfig(root);
   const manifest = manifestFor(root, [{ method: "GET", pathTemplate: "/v1/sub" }]);
 
   await observe({
@@ -308,4 +315,52 @@ test("one entry per endpoint, not one per field", async () => {
   const entries = driftToChangeEntries(check);
   assert.equal(entries.length, 1, "three overlapping patches for one change is a worse outcome");
   assert.equal(entries[0].identifiers.length, 3, "but the agent still sees every affected field");
+});
+
+test("an API that was never opted into is not called at all", async () => {
+  // Some APIs bill per request. Discovering a host in the code is not consent
+  // to start sending it traffic every day.
+  const root = tempRepo();
+  const config = loadConfig(root);
+  const manifest = manifestFor(root, [{ method: "GET", pathTemplate: "/v1/me" }]);
+
+  let called = false;
+  const result = await observe({
+    config,
+    manifest,
+    fetchImpl: (async () => {
+      called = true;
+      return new Response("{}");
+    }) as unknown as typeof fetch,
+  });
+
+  assert.equal(called, false, "an unlisted host must never be contacted");
+  assert.equal(result.recorded.length, 0);
+  assert.match(result.skipped[0].reason, /not listed under "observe"/);
+});
+
+test("a run cannot exceed its request budget", async () => {
+  const root = tempRepo();
+  const config = observeConfig(root, {
+    paths: ["/a", "/b", "/c", "/d"],
+    samples: 3,
+  });
+  const manifest = manifestFor(root, [{ method: "GET", pathTemplate: "/a" }]);
+
+  let calls = 0;
+  const result = await observe({
+    config,
+    manifest,
+    maxRequests: 6,
+    fetchImpl: (async () => {
+      calls++;
+      return new Response(JSON.stringify({ id: 1 }), {
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof fetch,
+  });
+
+  assert.equal(calls, 6, "the ceiling is a hard stop, not a target");
+  assert.equal(result.recorded.length, 2);
+  assert.match(result.skipped.at(-1)!.reason, /request budget reached/);
 });

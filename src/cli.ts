@@ -184,6 +184,7 @@ Options:
   --check          Compare against the recorded baseline instead of recording
   --dry-run        Print what would be called, without calling anything
   --samples <n>    Calls per endpoint per run (default 3)
+  --max-requests <n>  Ceiling on live requests for the whole run (default 60)
   --min-samples <n>  Lower the confidence floor (for testing)
 
 Authentication comes from your environment. In acb.config.json:
@@ -195,8 +196,10 @@ Authentication comes from your environment. In acb.config.json:
     }
   }
 
-Templated paths such as /v1/users/{id} are skipped unless you list a concrete
-one, because there is no safe id to invent. Only GET is ever called.
+Probing is opt-in per host: an API that is not listed under "observe" is never
+called, because some APIs bill per request. Templated paths such as
+/v1/users/{id} are skipped unless you list a concrete one, since there is no
+safe id to invent. Only GET is ever called.
 `,
   sources: `acb sources suggest — find where a provider publishes its changes
 
@@ -608,6 +611,7 @@ async function runObserve(config: Config, args: ParsedArgs): Promise<number> {
     dryRun: args.flags.has("dry-run"),
     samples: numberOption(args, "samples"),
     minSamples: numberOption(args, "min-samples"),
+    maxRequests: numberOption(args, "max-requests"),
   });
 
   if (args.json) {

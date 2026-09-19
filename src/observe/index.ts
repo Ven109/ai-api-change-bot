@@ -51,6 +51,13 @@ export type ObserveResult = {
   actionRequired: boolean;
 };
 
+/**
+ * Ceiling on live requests per run, across every host. Three samples of a
+ * handful of endpoints is the intended shape; anything approaching this
+ * number means a misconfiguration, and stopping is friendlier than billing.
+ */
+export const DEFAULT_MAX_REQUESTS = 60;
+
 export type ObserveOptions = {
   config: Config;
   manifest: Manifest;
@@ -59,6 +66,8 @@ export type ObserveOptions = {
   dryRun?: boolean;
   samples?: number;
   minSamples?: number;
+  /** Hard ceiling on live requests for the whole run. */
+  maxRequests?: number;
   fetchImpl?: typeof fetch;
   now?: () => Date;
 };
@@ -66,6 +75,7 @@ export type ObserveOptions = {
 export async function observe(options: ObserveOptions): Promise<ObserveResult> {
   const { config, manifest } = options;
   const dir = acbPaths(config.root).observations;
+  const budget = { remaining: options.maxRequests ?? DEFAULT_MAX_REQUESTS };
   const result: ObserveResult = {
     mode: options.check ? "check" : "record",
     recorded: [],
@@ -78,7 +88,20 @@ export async function observe(options: ObserveOptions): Promise<ObserveResult> {
     if (integration.kind !== "http") continue;
     if (options.integrationId && integration.id !== options.integrationId) continue;
 
-    const spec: ObserveSpec = config.observe[integration.host ?? ""] ?? config.observe[integration.id] ?? {};
+    // Probing is opt-in per host, and deliberately so. Calling every endpoint
+    // we happen to find would spend the developer's money without asking --
+    // some APIs bill per request -- and would send traffic to a third party
+    // that nobody approved. An unlisted host is reported, never called.
+    const spec: ObserveSpec | undefined =
+      config.observe[integration.host ?? ""] ?? config.observe[integration.id];
+    if (!spec) {
+      result.skipped.push({
+        endpoint: integration.id,
+        reason: `not listed under "observe" in acb.config.json, so it is never called`,
+      });
+      continue;
+    }
+
     const { probes, skipped } = plannedProbes(integration, spec);
     for (const entry of skipped) {
       result.skipped.push({ endpoint: `GET ${entry.path}`, reason: entry.reason });
@@ -89,6 +112,16 @@ export async function observe(options: ObserveOptions): Promise<ObserveResult> {
         result.skipped.push({ endpoint: probe.url, reason: "dry run — not called" });
         continue;
       }
+
+      const samples = options.samples ?? spec.samples ?? 3;
+      if (budget.remaining < samples) {
+        result.skipped.push({
+          endpoint: probe.url,
+          reason: `request budget reached (${options.maxRequests ?? DEFAULT_MAX_REQUESTS}) — raise it with --max-requests if this is intended`,
+        });
+        continue;
+      }
+      budget.remaining -= samples;
 
       const run = await runProbe(probe, {
         spec,

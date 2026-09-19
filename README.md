@@ -197,6 +197,12 @@ claimed at all.
 Each finding names the line that reads the affected field, so a drift on
 something you never touch stays a log line instead of an interruption.
 
+**Probing is opt-in per host.** An API that is not listed under `observe` is
+never called — discovering a host in your code is not consent to send it
+traffic every day, and some APIs bill per request. There is also a ceiling of
+60 live requests per run (`--max-requests`) so a large manifest cannot turn
+into a surprise bill.
+
 Auth comes from your environment:
 
 ```json
@@ -212,6 +218,14 @@ Auth comes from your environment:
 
 Templated paths such as `/v1/users/{id}` are skipped unless you list a concrete
 one — there is no safe id to invent. Only `GET` is ever called.
+
+**Which credentials to use.** Prefer, in order: a **read-only or restricted
+key** (Stripe restricted keys, GitHub fine-grained PATs, scoped service
+accounts); failing that, **test/sandbox mode** (`sk_test_…`), which for most
+providers serves the identical schema from the identical code path, so it
+tells you what you need without touching production data. Use a full
+production key only if neither exists — and remember the profile records types
+and presence, never values, so what lands in git is safe either way.
 
 ### Configuration reference
 
