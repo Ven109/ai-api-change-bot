@@ -752,6 +752,7 @@ export async function main(argv: string[]): Promise<number> {
   }
 
   const root = path.resolve(args.cwd ?? process.cwd());
+  loadDotEnv(root);
 
   try {
     switch (args.command) {
@@ -808,6 +809,32 @@ export async function main(argv: string[]): Promise<number> {
     }
     throw err;
   }
+}
+
+/**
+ * Load `.env` from the repo root, if there is one.
+ *
+ * Credentials belong in the environment: acb.config.json is committed and
+ * holds only variable *names* (`${STRIPE_KEY}`), never values. Locally the
+ * natural home for those values is a .env file, so read it rather than making
+ * people export things by hand in every shell.
+ *
+ * A real environment variable always wins, because that is what CI sets and
+ * a stale .env silently overriding it would be a miserable thing to debug.
+ */
+export function loadDotEnv(root: string): void {
+  const file = path.join(root, ".env");
+  if (!fs.existsSync(file)) return;
+
+  const preexisting = new Map(Object.entries(process.env));
+  try {
+    process.loadEnvFile(file);
+  } catch (err) {
+    warn(`ignoring .env: ${(err as Error).message}`);
+    return;
+  }
+  for (const [key, value] of preexisting) process.env[key] = value;
+  debug(`loaded .env from ${root}`);
 }
 
 async function readVersion(): Promise<string> {

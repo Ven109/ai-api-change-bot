@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { after, test } from "node:test";
+import { loadDotEnv } from "../src/cli.ts";
 
 const execFileAsync = promisify(execFile);
 const BIN = path.join(import.meta.dirname, "..", "bin", "acb");
@@ -79,4 +80,28 @@ test("an unknown command exits 1", async () => {
   const { code, stderr } = await acb(["frobnicate"]);
   assert.equal(code, 1);
   assert.match(stderr, /unknown command/);
+});
+
+test(".env supplies credentials locally, but never overrides the real environment", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "acb-dotenv-"));
+  fs.writeFileSync(
+    path.join(root, ".env"),
+    "ACB_DOTENV_ONLY=from-file\nACB_DOTENV_BOTH=from-file\n",
+  );
+
+  process.env.ACB_DOTENV_BOTH = "from-environment";
+  delete process.env.ACB_DOTENV_ONLY;
+  t.after(() => {
+    delete process.env.ACB_DOTENV_BOTH;
+    delete process.env.ACB_DOTENV_ONLY;
+  });
+
+  loadDotEnv(root);
+
+  assert.equal(process.env.ACB_DOTENV_ONLY, "from-file", "the file fills in what is missing");
+  assert.equal(
+    process.env.ACB_DOTENV_BOTH,
+    "from-environment",
+    "CI sets real variables; a stale .env must never silently win",
+  );
 });

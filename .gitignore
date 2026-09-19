@@ -15,3 +15,6 @@ examples/*/.acb/
 
 # npm run demo works in copies under here.
 .demo/
+
+# Credentials for local runs. acb reads this automatically.
+.env

@@ -219,6 +219,60 @@ Auth comes from your environment:
 Templated paths such as `/v1/users/{id}` are skipped unless you list a concrete
 one — there is no safe id to invent. Only `GET` is ever called.
 
+### Where the keys go
+
+`acb.config.json` is committed and holds only variable **names**, never values:
+
+```json
+{
+  "observe": {
+    "api.stripe.com": {
+      "auth": { "header": "Authorization", "value": "Bearer ${STRIPE_KEY}" },
+      "paths": ["/v1/subscriptions/sub_123"]
+    }
+  }
+}
+```
+
+There are two unrelated kinds of key, and it is worth keeping them apart:
+
+| | What it is for | Needed for |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | the model | `impact`, `migrate` |
+| `STRIPE_KEY` and friends | the API being watched | `observe` only |
+
+Detection is keyless — `scan`, `check`, `observe` and drift need no model at
+all — so the model key is only required once you want it to *assess* and *fix*
+rather than just *tell you*.
+
+**Locally**, put values in a `.env` at the repo root (gitignored) and acb reads
+it automatically:
+
+```
+STRIPE_KEY=sk_test_51...
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+A real environment variable always wins over `.env`, so a stale file cannot
+silently override what CI sets. You can also just `export` them; and locally
+you can skip `ANTHROPIC_API_KEY` entirely by using the `claude-cli` provider,
+which reuses your existing Claude Code login.
+
+**In CI**, add them under *Settings → Secrets and variables → Actions*, then
+pass them through in the workflow:
+
+```yaml
+- uses: Ven109/ai-api-change-bot@v1
+  with:
+    api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+    observe: "true"
+  env:
+    STRIPE_KEY: ${{ secrets.STRIPE_KEY }}
+```
+
+If a variable is missing, acb names it rather than failing vaguely:
+`set STRIPE_KEY in your environment to probe this API`.
+
 **Which credentials to use.** Prefer, in order: a **read-only or restricted
 key** (Stripe restricted keys, GitHub fine-grained PATs, scoped service
 accounts); failing that, **test/sandbox mode** (`sk_test_…`), which for most
