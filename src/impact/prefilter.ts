@@ -243,14 +243,14 @@ function stripCall(member: string): string {
   return member.replace(/\(\)$/, "");
 }
 
-type SymbolHit = { file: string; line: number; symbol: string };
+export type SymbolHit = { file: string; line: number; symbol: string };
 
 /**
  * Where a response field or symbol shows up in the repository's own code.
  * Deliberately narrow: only the files the manifest already knows about, and
  * only the shapes that actually read a field.
  */
-function searchForSymbols(
+export function searchForSymbols(
   root: string,
   manifest: Manifest,
   symbols: string[],

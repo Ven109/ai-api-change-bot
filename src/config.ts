@@ -34,6 +34,21 @@ export type ModelConfig = {
   replayFile?: string;
 };
 
+/** `acb observe`: how to call an API so its responses can be profiled. */
+export type ObserveSpec = {
+  /** Defaults to `https://<host>`. */
+  baseUrl?: string;
+  /**
+   * The value may contain `${ENV_VAR}`, resolved at call time, so credentials
+   * live in the environment and never in the committed config.
+   */
+  auth?: { header?: string; value?: string };
+  /** Concrete paths with real ids. Omit to derive them from the manifest. */
+  paths?: string[];
+  /** Samples per run. More samples means fewer false positives. */
+  samples?: number;
+};
+
 export type Config = {
   /** Repo root; derived, not read from the file. */
   root: string;
@@ -41,6 +56,8 @@ export type Config = {
   configPath?: string;
   model: ModelConfig;
   sources: Record<string, SourceSpec[]>;
+  /** Keyed by host (`api.stripe.com`) or integration id (`http:api.stripe.com`). */
+  observe: Record<string, ObserveSpec>;
   validate: { commands: string[]; timeoutMs: number };
   impact: { minScore: number };
   migrate: {
@@ -92,6 +109,7 @@ function defaults(root: string): Config {
     root,
     model: { provider: "none", maxTokens: 4096, temperature: 0 },
     sources: {},
+    observe: {},
     validate: { commands: [], timeoutMs: 120_000 },
     impact: { minScore: 0.4 },
     migrate: { agent: { type: "auto" }, maxSteps: 30, maxAttempts: 3 },
@@ -110,6 +128,11 @@ const SOURCE_TYPES = new Set(["openapi", "changelog", "headers"]);
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function requireString(value: unknown, field: string): string {
+  if (typeof value !== "string") throw new ConfigError(`${field} must be a string`);
+  return value;
 }
 
 function requireStringArray(value: unknown, field: string): string[] {
@@ -133,6 +156,7 @@ export function parseConfig(raw: unknown, root: string, configPath?: string): Co
   const known = new Set([
     "model",
     "sources",
+    "observe",
     "validate",
     "impact",
     "migrate",
@@ -171,6 +195,31 @@ export function parseConfig(raw: unknown, root: string, configPath?: string): Co
         if (typeof m[key] !== "number") throw new ConfigError(`model.${key} must be a number`);
         cfg.model[key] = m[key] as number;
       }
+    }
+  }
+
+  if (raw.observe !== undefined) {
+    if (!isObject(raw.observe)) throw new ConfigError("observe must be an object");
+    for (const [key, value] of Object.entries(raw.observe)) {
+      if (!isObject(value)) throw new ConfigError(`observe.${key} must be an object`);
+      const spec: ObserveSpec = {};
+      if (value.baseUrl !== undefined) spec.baseUrl = requireString(value.baseUrl, `observe.${key}.baseUrl`);
+      if (value.samples !== undefined) {
+        const samples = value.samples;
+        if (typeof samples !== "number" || !Number.isInteger(samples) || samples < 1) {
+          throw new ConfigError(`observe.${key}.samples must be a positive integer`);
+        }
+        spec.samples = samples;
+      }
+      if (value.paths !== undefined) spec.paths = requireStringArray(value.paths, `observe.${key}.paths`);
+      if (value.auth !== undefined) {
+        if (!isObject(value.auth)) throw new ConfigError(`observe.${key}.auth must be an object`);
+        spec.auth = {
+          header: value.auth.header === undefined ? undefined : requireString(value.auth.header, `observe.${key}.auth.header`),
+          value: value.auth.value === undefined ? undefined : requireString(value.auth.value, `observe.${key}.auth.value`),
+        };
+      }
+      cfg.observe[key] = spec;
     }
   }
 

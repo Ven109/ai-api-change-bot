@@ -7,6 +7,7 @@
 //   .acb/reports/        impact reports and agent transcripts
 //   .acb/patches/        generated patches
 //   .acb/egress/         --dry-run-llm prompt dumps
+//   .acb/observations/   recorded field profiles per endpoint (commit them)
 //   .acb/work/           throwaway migration workspaces (do not commit)
 
 import fs from "node:fs";
@@ -22,6 +23,7 @@ export type AcbPaths = {
   reports: string;
   patches: string;
   egress: string;
+  observations: string;
   work: string;
 };
 
@@ -36,6 +38,7 @@ export function acbPaths(root: string): AcbPaths {
     reports: path.join(dir, "reports"),
     patches: path.join(dir, "patches"),
     egress: path.join(dir, "egress"),
+    observations: path.join(dir, "observations"),
     work: path.join(dir, "work"),
   };
 }

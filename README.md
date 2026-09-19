@@ -152,8 +152,66 @@ Exit codes: `0` nothing to do · `1` error · `2` a human needs to look at this
 | `acb migrate` | prepare and validate a migration (`--item`, `--keep-workspace`) |
 | `acb sources suggest` | find where a provider publishes its changes (`--write` to save) |
 | `acb contract` | check your calls against the provider's spec — useful in CI on its own |
+| `acb observe` | record what the APIs actually return; `--check` reports what drifted |
 | `acb run` | the whole loop (`--pr`, `--no-llm`, `--no-migrate`, `--offline`, `--json`) |
 | `acb config` | print the effective configuration |
+
+### Watching what the API actually does
+
+`acb check` reads what a provider *says*. `acb observe` watches what it *does*,
+which turns out to matter more.
+
+```console
+$ acb observe                 # record the baseline, then commit .acb/observations/
+$ acb observe --check         # call again and report what drifted
+```
+
+It records a per-field profile of each response — which fields are present,
+their types, whether they are null or empty — and never the values themselves.
+Nothing sensitive is written to disk and nothing leaves your machine.
+
+**Why this exists.** We assembled 15 real breaking changes and measured what
+each signal would have caught ([`eval/FINDINGS.md`](eval/FINDINGS.md), reproduce
+with `npm run eval:score`):
+
+| Signal | Applicable | Detected | Median lead |
+| --- | --- | --- | --- |
+| spec diff | 6/14 | 33% | 2d (worst: **−10d**) |
+| changelog | 11/14 | 73% | 47d |
+| **calling the API** | **14/14** | **93%** | 0d |
+
+43% of those breakages were announced nowhere at all — no changelog, no spec, no
+blog post. And the ones that hurt longest were **HTTP 200 with an unchanged
+schema**: Zoom returned `"user_email": ""` for nine months, Volvo flipped an
+object to `null`, a moved Stripe field reached a database as `Invalid Date`.
+Error monitoring cannot see those, because nothing errors. Tests cannot, because
+mocks do not change. Spec diffs cannot, because the shape is identical.
+
+**Why it does not cry wolf.** Only *always → always* transitions are reported —
+a field that was present in every sample and is now absent in every sample. A
+field that was sometimes missing was always optional, so its absence is never an
+event. Values are ignored entirely; array length, ids and numbers change
+constantly and none of that is a contract. Below three samples nothing is
+claimed at all.
+
+Each finding names the line that reads the affected field, so a drift on
+something you never touch stays a log line instead of an interruption.
+
+Auth comes from your environment:
+
+```json
+{
+  "observe": {
+    "api.stripe.com": {
+      "auth": { "header": "Authorization", "value": "Bearer ${STRIPE_KEY}" },
+      "paths": ["/v1/subscriptions/sub_123"]
+    }
+  }
+}
+```
+
+Templated paths such as `/v1/users/{id}` are skipped unless you list a concrete
+one — there is no safe id to invent. Only `GET` is ever called.
 
 ### Configuration reference
 
@@ -162,6 +220,7 @@ Every key is optional; the defaults are what the demo uses.
 | Key | Default | |
 | --- | --- | --- |
 | `sources` | `{}` | upstream sources per integration id (`http:<host>`, `npm:<pkg>`, `pypi:<pkg>`) |
+| `observe` | `{}` | per host: `baseUrl`, `auth: { header, value }` (supports `${ENV_VAR}`), `paths`, `samples` |
 | `model` | `{ "provider": "none" }` | see below |
 | `validate.commands` | `[]` | the checks a migration must pass. Empty means acb says so, loudly |
 | `validate.timeoutMs` | `120000` | per command |
