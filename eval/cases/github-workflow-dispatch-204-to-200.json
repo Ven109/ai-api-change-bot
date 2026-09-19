@@ -1,0 +1,38 @@
+{
+  "id": "github-workflow-dispatch-204-to-200",
+  "api_host": "api.github.com",
+  "change": {
+    "kind": "field_type_changed",
+    "summary": "A documented 204 No Content with an empty body silently became 200 OK with a JSON body {workflow_run_id, run_url, html_url}. Clients testing for 204 as the success signal treated every successful dispatch as a failure. Pinning X-GitHub-Api-Version: 2022-11-28 did not prevent it.",
+    "method": "POST",
+    "path_template": "/repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches"
+  },
+  "announced_at": null,
+  "effective_at": "2025-12-19",
+  "signals": {
+    "spec": {
+      "available": true,
+      "detected_at": null,
+      "note": "GitHub publishes a spec and pins an API version header, and neither helped: the rollout was unintended and went out under the pinned version. The versioning mechanism that exists precisely to prevent this did not."
+    },
+    "changelog": {
+      "available": true,
+      "detected_at": null,
+      "source_url": "https://github.blog/changelog/2026-02-19-workflow-dispatch-api-now-returns-run-ids/",
+      "note": "The changelog entry appeared 2026-02-19, two months AFTER developers hit it, and describes an opt-in parameter — confirming the December behaviour was an accidental default-on rollout. Ship first, announce later."
+    },
+    "headers": { "available": false },
+    "contract": {
+      "available": true,
+      "detected_at": "2025-12-19",
+      "note": "The archetype for this technique: status 204 to 200, empty body to a three-key object. One scheduled call against a throwaway repo, diffed on status and top-level key set, catches it on the first poll."
+    }
+  },
+  "evidence_of_pain": [
+    "https://github.com/octokit/octokit.rb/issues/1790",
+    "https://github.com/orgs/community/discussions/182272",
+    "https://github.com/orgs/community/discussions/9752"
+  ],
+  "confidence": "verified",
+  "notes": "GitHub's own Ruby SDK broke on GitHub's own API. Staff confirmed in-thread that it had gone live by accident; the behaviour was reverted around 2025-12-22 and the docs were later retrofitted to match. Lead time is structurally impossible here — the only available win is detecting it in hours instead of hearing it from users."
+}

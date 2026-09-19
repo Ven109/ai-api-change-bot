@@ -1,0 +1,36 @@
+{
+  "id": "google-places-legacy-designation",
+  "api_host": "maps.googleapis.com",
+  "change": {
+    "kind": "access_restricted",
+    "summary": "Google designated the Places, Directions and Distance Matrix web services as 'Legacy'. From 2025-03-01 a Cloud project that had not ALREADY enabled them can never enable them. Projects already using them keep full support and saw no behavioural change at all.",
+    "method": "GET",
+    "path_template": "/maps/api/place/nearbysearch/json"
+  },
+  "announced_at": "2024-12-09",
+  "effective_at": "2025-03-01",
+  "signals": {
+    "spec": {
+      "available": false,
+      "note": "The new Places API has a Discovery document and protos; the legacy web service never had either. Same pattern as Twitter and OpenWeather — the surface being retired is the one with no machine-readable contract."
+    },
+    "changelog": {
+      "available": true,
+      "detected_at": "2024-12-09",
+      "source_url": "https://developers.google.com/maps/billing-and-pricing/faq",
+      "note": "It shipped as a PRICING announcement. The earliest artifact is a billing FAQ; the Places release notes say nothing about it, and it does not appear on Google's own deprecations page even now. A crawler watching the obvious API channels would have missed it entirely — which is a real finding about where announcements actually live."
+    },
+    "headers": { "available": false },
+    "contract": {
+      "available": false,
+      "note": "Not detectable by calling. Probed 2026-09-19: all seven legacy endpoints still serve normal JSON. The break is invisible from the wire because it is a control-plane restriction on project provisioning, not a change to the API's behaviour."
+    }
+  },
+  "evidence_of_pain": [
+    "https://github.com/agno-agi/agno/issues/2331",
+    "https://github.com/FaridSafi/react-native-google-places-autocomplete/issues/965",
+    "https://github.com/visgl/react-google-maps/issues/736"
+  ],
+  "confidence": "unverified",
+  "notes": "DELIBERATELY EXCLUDED FROM SCORING, and the exclusion is the point. Nothing was turned off. Google invented a lifecycle stage called 'Legacy' that is explicitly NOT 'Deprecated', which avoids starting the 12-month decommission clock in its terms of service; its own wording is 'there is no date yet for when this will happen'. Calling this a breaking change would inflate the dataset. It is kept as a record of a judgement call and because the narrow break it DID cause is instructive: every new developer, fresh CI or staging project, and open-source library whose users create new projects broke on 2025-03-01, which is exactly when the linked issues cluster, while existing projects noticed nothing. Also note the legacy docs were not re-badged with the Legacy banner until some point after the effective date — the 2025-02-03 capture carries no warning whatsoever."
+}

@@ -1,0 +1,44 @@
+{
+  "id": "stripe-subscription-current-period-moved",
+  "api_host": "api.stripe.com",
+  "change": {
+    "kind": "field_removed",
+    "summary": "current_period_start and current_period_end were removed from the Subscription object and re-added to SubscriptionItem, so the value moved to items.data[].current_period_end. Shipped in API version 2025-03-31.basil. The failure is silent: the JSON still parses and downstream code receives undefined — one report shows it reaching a database as new Date(\"Invalid Date\") rather than raising.",
+    "method": "GET",
+    "path_template": "/v1/subscriptions/{id}"
+  },
+  "announced_at": "2025-03-18",
+  "effective_at": "2025-03-31",
+  "signals": {
+    "spec": {
+      "available": true,
+      "detected_at": "2025-03-18",
+      "source_url": "https://github.com/stripe/openapi/commit/c6daabbf7e2e035c2c1454f280282ee89da5962d",
+      "note": "The strongest case in the dataset for watching specs. A monitor diffing stripe/openapi fires 13 days before the human changelog post, found by bisecting every commit touching the spec and testing whether 'current_period_end' was still a property of the subscription schema. The GA spec followed on 2025-03-25."
+    },
+    "changelog": {
+      "available": true,
+      "detected_at": "2025-03-18",
+      "source_url": "https://github.com/stripe/openapi/commit/e2eecf641850f000b02063d4c13844ae3354040c",
+      "note": "Stripe keeps openapi/upcoming-changes/rest.md, a prose file of pending breaking changes, and it named this removal in plain English 65 seconds after the spec commit. The docs.stripe.com changelog post came 13 days later, on the release date itself. Worth noting that the earliest prose signal lives in the spec repo, not the docs site."
+    },
+    "headers": { "available": false },
+    "sdk": {
+      "available": true,
+      "detected_at": "2025-03-26",
+      "source_url": "https://github.com/stripe/stripe-node/pull/2279",
+      "note": "PR 'Support for APIs in the new API version 2025-03-31.basil', opened 2025-03-26 and merged on the release date."
+    },
+    "contract": {
+      "available": true,
+      "detected_at": "2025-03-31",
+      "note": "Detectable only if the probe opts in. Stripe pins an API version per account, so a prober using the account's pinned version sees the old shape indefinitely and reports healthy. Catching this by calling requires deliberately sending Stripe-Version: 2025-03-31.basil — which means a prober has to know the new version exists, i.e. it depends on the document signals rather than replacing them."
+    }
+  },
+  "evidence_of_pain": [
+    "https://github.com/stripe/stripe-dotnet/issues/3089",
+    "https://github.com/better-auth/better-auth/issues/2171"
+  ],
+  "confidence": "verified",
+  "notes": "Version pinning means announced_at and effective_at do not bracket the real incident window: nobody broke on 2025-03-31. Breakage tracked SDK major upgrades (stripe-node v18.0.0 published 2025-04-01) and the reports cluster 2025-04-02 to 2025-04-08. So the lead time a consumer actually got was larger than the 13 days scored here — the scorer is being conservative. Verified by cloning stripe/openapi and bisecting commit by commit rather than trusting the changelog."
+}

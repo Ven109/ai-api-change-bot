@@ -1,0 +1,33 @@
+{
+  "id": "volvo-connected-vehicle-null-fields",
+  "api_host": "api.volvocars.com",
+  "change": {
+    "kind": "field_type_changed",
+    "summary": "Fields inside the top-level data object switched from 'omitted when absent' to 'present with JSON null' — serviceTrigger, averageEnergyConsumption, batteryChargeLevel and others, sitting alongside normal {timestamp, unit, value} objects. HTTP stayed 200 and every other value was correct. Clients mapping data values into a typed model crashed.",
+    "method": "GET",
+    "path_template": "/connected-vehicle/v2/vehicles/{vin}/diagnostics"
+  },
+  "announced_at": null,
+  "effective_at": "2026-08-20",
+  "signals": {
+    "spec": { "available": false },
+    "changelog": {
+      "available": true,
+      "detected_at": null,
+      "note": "developer.volvocars.com is Akamai-blocked to automated fetches, so a quietly-added portal note cannot be fully ruled out. What is verified is that none of roughly fifteen affected developers — including the integration's code owner, who learned of it from user reports — referenced one."
+    },
+    "headers": { "available": false },
+    "contract": {
+      "available": true,
+      "detected_at": "2026-08-20",
+      "note": "Detectable ONLY with per-field type tracking. The status stayed 200 and no key name changed; a monitor diffing status codes or key sets alone misses it completely. You have to record that data.serviceTrigger was an object and is now null. Also account-gated: it needs a real VIN and OAuth token, so it is not publicly probeable."
+    }
+  },
+  "evidence_of_pain": [
+    "https://github.com/home-assistant/core/issues/179668",
+    "https://github.com/thomasddn/volvo-cars-api/issues/7",
+    "https://github.com/home-assistant/core/pull/179712"
+  ],
+  "confidence": "verified",
+  "notes": "Two physically independent Home Assistant instances — different houses, networks, ISPs, credentials and car models — went from good values to unavailable 81 seconds apart, which is about as clean a server-side attribution as field evidence gets. The client library had gone ten months between releases, so nothing changed on the caller side. This is the case that proves response-shape checking must be typed rather than presence-based."
+}

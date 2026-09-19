@@ -1,0 +1,46 @@
+{
+  "id": "slack-files-upload-sunset",
+  "api_host": "slack.com",
+  "change": {
+    "kind": "operation_deprecated",
+    "summary": "files.upload deprecated and sunset; apps created after the cutoff were blocked outright and received {\"ok\": false, \"error\": \"method_deprecated\"}. Callers had to move to a two-call sequence.",
+    "method": "POST",
+    "path_template": "/api/files.upload",
+    "replacement": "POST /api/files.getUploadURLExternal then POST /api/files.completeUploadExternal"
+  },
+  "announced_at": "2024-04-09",
+  "effective_at": "2024-05-08",
+  "signals": {
+    "spec": {
+      "available": true,
+      "detected_at": null,
+      "source_url": "https://github.com/slackapi/slack-api-specs",
+      "note": "A spec existed and was watchable, so this counts as a miss rather than an absent signal. It was last pushed 2021-09-07 and the repo was archived 2024-03-27 — two weeks BEFORE the deprecation was announced. The published document contains files.upload seven times and getUploadURLExternal zero times. A spec differ watching this repo would have seen nothing, ever."
+    },
+    "changelog": {
+      "available": true,
+      "detected_at": "2024-04-09",
+      "source_url": "http://web.archive.org/web/20240506213910/https://api.slack.com/changelog/2024-04-a-better-way-to-upload-files-is-here-to-stay",
+      "note": "Found only by reading the body: the URL slug is 'a-better-way-to-upload-files-is-here-to-stay' while the title is 'files.upload retires in March 2025'. Slug- or headline-based triage would misclassify this as a feature announcement."
+    },
+    "headers": {
+      "available": false,
+      "note": "Slack signals deprecation in the JSON body ({\"ok\": false, \"error\": \"method_deprecated\"}), not via RFC 8594 Sunset or RFC 9745 Deprecation headers. A header probe finds nothing here."
+    },
+    "contract": {
+      "available": true,
+      "detected_at": null,
+      "note": "Calling the endpoint with an EXISTING app's credentials kept succeeding — only apps created after the cutoff were blocked. So contract verification from an established repo would have seen a healthy endpoint. The people who broke were those building new apps against old code, which is invisible to spec diffs, header probes and live calls alike."
+    }
+  },
+  "evidence_of_pain": [
+    "https://github.com/apache/superset/issues/30439",
+    "https://github.com/apache/superset/issues/28353",
+    "https://github.com/slack-go/slack/issues/1287",
+    "https://github.com/home-assistant/core/issues/116833",
+    "https://github.com/metabase/metabase/issues/41890",
+    "https://github.com/caronc/apprise/issues/1126"
+  ],
+  "confidence": "partial",
+  "notes": "effective_at uses the new-app cutoff, which is when real breakage began (Superset hit it 2024-09-30), not the sunset. The sunset itself moved from 2025-03-11 to 2025-11-12 (announced 2025-03-17), and no primary source confirms it actually happened — the method reference page was still in future tense when checked on 2026-09-19. Marked partial for a second reason: the announcement post was EDITED IN PLACE. The archived April 2024 copy says the cutoff was 2024-05-08; the live copy at the same URL now says 2024-05-16. A monitor diffing that page would see a date silently change with no new entry in any feed."
+}

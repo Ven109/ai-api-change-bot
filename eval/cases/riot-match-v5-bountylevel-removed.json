@@ -1,0 +1,37 @@
+{
+  "id": "riot-match-v5-bountylevel-removed",
+  "api_host": "api.riotgames.com",
+  "change": {
+    "kind": "field_removed",
+    "summary": "The int32 field bountyLevel was removed from every object in info.participants[] (ParticipantDto). The key is absent, not null, so strictly-typed clients failed to deserialize any newly played match. Riot also dropped the field from its own published DTO reference at the same time.",
+    "method": "GET",
+    "path_template": "/lol/match/v5/matches/{matchId}",
+    "field": "info.participants[].bountyLevel"
+  },
+  "announced_at": null,
+  "effective_at": "2025-05-14",
+  "signals": {
+    "spec": {
+      "available": false,
+      "note": "Riot publishes reference docs rather than an OpenAPI description, and the DTO reference was edited to match the new behaviour rather than announcing the change."
+    },
+    "changelog": {
+      "available": false,
+      "detected_at": null,
+      "note": "developer.riotgames.com/changelog returns 404 — there is no changelog to watch. Riot does announce when it chooses to (the summonerId deprecation two months later went out on X), so this was a decision not to."
+    },
+    "headers": { "available": false },
+    "contract": {
+      "available": true,
+      "detected_at": "2025-05-14",
+      "note": "Fetch one recent match and diff the participant object's key set against a stored baseline. Needs nothing beyond an ordinary API key."
+    }
+  },
+  "evidence_of_pain": [
+    "https://github.com/MingweiSamuel/Riven/issues/88",
+    "https://github.com/RiotGames/developer-relations/issues/1076",
+    "https://github.com/MingweiSamuel/riotapi-schema/commit/bef70c7f"
+  ],
+  "confidence": "verified",
+  "notes": "The strongest silent-change evidence in the dataset: Riot's own public bug tracker carries an issue reporting this exact undocumented removal, still open and uncommented sixteen months later. A community schema repository had to re-add the field by hand because Riot had deleted it from the published DTO too."
+}

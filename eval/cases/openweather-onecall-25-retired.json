@@ -1,0 +1,40 @@
+{
+  "id": "openweather-onecall-25-retired",
+  "api_host": "api.openweathermap.org",
+  "change": {
+    "kind": "auth_changed",
+    "summary": "GET /data/2.5/onecall and /data/2.5/onecall/timemachine were retired in favour of /data/3.0/onecall. The response schema is nearly identical, so this is not a schema break — it is an entitlement break: the path stays, the key stops being authorised, and the call returns 401 {\"cod\":401,\"message\":\"Invalid API key...\"}. Migration also requires a separate paid subscription with a card on file, not just a URL edit.",
+    "method": "GET",
+    "path_template": "/data/2.5/onecall"
+  },
+  "announced_at": "2024-03-24",
+  "effective_at": "2024-06-01",
+  "signals": {
+    "spec": {
+      "available": false,
+      "note": "No OpenAPI anywhere: openweathermap.org/openapi.json and api.openweathermap.org/openapi.json both 404, and apis.guru has no entry. The docs are hand-written HTML, so nothing machine-diffable ever existed."
+    },
+    "changelog": {
+      "available": true,
+      "detected_at": "2022-08-09",
+      "source_url": "https://web.archive.org/web/20220809124210/https://openweathermap.org/api/one-call-api",
+      "note": "The most unusual finding in the dataset. For roughly 19 months the deprecation banner WAS on the docs page — wrapped in an HTML comment, so it never rendered. A human reading the page saw nothing; a crawler reading raw HTML would have seen it in August 2022, about 22 months early. Recorded as detected because a crawler genuinely would have caught it, but it is a warning as much as a win: a crawler that reads unrendered markup will also surface things the vendor did not mean to say, and the visible notice did not appear until 2024-03-24."
+    },
+    "headers": { "available": false },
+    "contract": {
+      "available": true,
+      "detected_at": "2022-08-18",
+      "source_url": "https://github.com/csparpa/pyowm/issues/404",
+      "note": "Requires an authorised call, not a liveness check. The path still resolves today — probed 2026-09-19, it returns 401 rather than 404 — so a prober without a real key sees nothing meaningful. Detection here needed a NEW key: from around August 2022 newly issued keys already 401'd while existing keys kept working for another 22 months, which no announcement ever mentioned."
+    }
+  },
+  "evidence_of_pain": [
+    "https://github.com/csparpa/pyowm/issues/404",
+    "https://github.com/home-assistant/core/issues/113000",
+    "https://github.com/MagicMirrorOrg/MagicMirror/issues/3424",
+    "https://github.com/influxdata/telegraf/issues/17546",
+    "https://forum.pvoutput.org/t/openweather-one-call-discontinued-june-2024/7445"
+  ],
+  "confidence": "partial",
+  "notes": "effective_at is a month, not a day: OpenWeather never published one. The docs flipped from 'will be deprecated in June 2024' (2024-06-15 capture) to 'has been deprecated on June 2024' (2024-07-08), and a user reports it stopping around 2024-06-02. 2024-06-01 is therefore the earliest defensible point in the stated window. announced_at uses the first VISIBLE notice rather than the commented-out one, because scoring an invisible announcement as an announcement would flatter the changelog signal. The published date also slipped: 'April 15, 2024' became 'June 2024' roughly two days after the date it had promised, so a monitor keyed on announced dates would have raised a false alarm. A telegraf issue was still open more than a year after retirement."
+}
